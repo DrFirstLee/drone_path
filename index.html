@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>드론 비행 경로 분석 및 시각화</title>
+    <style>
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, "Helvetica Neue", "Segoe UI", "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+            background-color: #f3f4f6;
+            color: #1f2937;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            padding: 2rem;
+            box-sizing: border-box;
+        }
+
+        h1 {
+            color: #111827;
+            margin-bottom: 2rem;
+            font-size: 2rem;
+            text-align: center;
+        }
+
+        .upload-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 2rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .file-input-wrapper {
+            margin-bottom: 1.5rem;
+        }
+
+        input[type="file"] {
+            display: none;
+        }
+
+        .custom-file-upload {
+            border: 2px dashed #d1d5db;
+            display: inline-block;
+            padding: 2rem 4rem;
+            cursor: pointer;
+            border-radius: 0.5rem;
+            transition: all 0.2s;
+            width: 80%;
+            max-width: 400px;
+        }
+
+        .custom-file-upload:hover {
+            border-color: #3b82f6;
+            background-color: #eff6ff;
+        }
+
+        .button {
+            background-color: #3b82f6;
+            color: white;
+            padding: 0.75rem 2rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-size: 1rem;
+        }
+
+        .button:hover {
+            background-color: #2563eb;
+        }
+
+        .button:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        #status {
+            margin-top: 1rem;
+            font-weight: 500;
+            min-height: 1.5rem;
+        }
+
+        .result-container {
+            background: white;
+            border-radius: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            width: 100%;
+            height: 80vh;
+            /* Changed from pb-ratio to fixed viewport height for better map viewing */
+            position: relative;
+            display: none;
+            /* Initially hidden */
+        }
+
+        iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            vertical-align: middle;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🚁 드론 비행 경로 분석</h1>
+
+        <div class="upload-card">
+            <div class="file-input-wrapper">
+                <label for="csvFile" class="custom-file-upload" id="dropZone">
+                    <span style="font-size: 2rem;">📂</span><br>
+                    <span id="fileName">클릭하여 CSV 파일 선택 또는 드래그</span>
+                </label>
+                <input type="file" id="csvFile" accept=".csv" />
+                <p style="margin-top: 1rem; color: #6b7280; font-size: 0.9rem; line-height: 1.4;">
+                    ※ <strong>주의</strong>: CSV 파일은 반드시 <strong>13개 컬럼 순서</strong>를 지켜야 합니다.<br>
+                    (시간, 경도, 위도, 고도, 롤, 피치, 요, 1x, 1y, 1z, 2x, 2y, 2z)
+                </p>
+            </div>
+
+            <button id="analyzeBtn" class="button">분석 시작</button>
+            <div id="status"></div>
+        </div>
+
+        <div class="result-container" id="resultContainer">
+            <iframe id="resultFrame"></iframe>
+        </div>
+    </div>
+
+    <script>
+        const fileInput = document.getElementById('csvFile');
+        const fileNameSpan = document.getElementById('fileName');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const statusDiv = document.getElementById('status');
+        const resultContainer = document.getElementById('resultContainer');
+        const resultFrame = document.getElementById('resultFrame');
+        const dropZone = document.getElementById('dropZone');
+
+        // File selection handler
+        fileInput.addEventListener('change', function () {
+            if (this.files && this.files.length > 0) {
+                fileNameSpan.textContent = this.files[0].name;
+                statusDiv.textContent = "";
+                statusDiv.style.color = "inherit";
+            }
+        });
+
+        // Drag and Drop handlers
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#3b82f6';
+            dropZone.style.backgroundColor = '#eff6ff';
+        });
+
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#d1d5db';
+            dropZone.style.backgroundColor = 'transparent';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#d1d5db';
+            dropZone.style.backgroundColor = 'transparent';
+
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                fileInput.files = e.dataTransfer.files;
+                fileNameSpan.textContent = fileInput.files[0].name;
+            }
+        });
+
+        // Analyze button handler
+        analyzeBtn.addEventListener('click', async () => {
+            if (!fileInput.files || fileInput.files.length === 0) {
+                alert("분석할 CSV 파일을 먼저 선택해주세요.");
+                return;
+            }
+
+            const file = fileInput.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+
+            // UI Update: Progress start
+            analyzeBtn.disabled = true;
+            statusDiv.innerHTML = '<div class="loader"></div> 문서를 업로드하고 분석을 시작합니다... (잠시만 기다려주세요)';
+            statusDiv.style.color = "#3b82f6";
+            resultContainer.style.display = 'none';
+
+            try {
+                // 1. Request Analysis (Start Job)
+                const startResponse = await fetch('https://chatbot.naranja.my/drone_analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!startResponse.ok) {
+                    throw new Error(`Server responded with status: ${startResponse.status}`);
+                }
+
+                // The server returns the raw HTML content of the map
+                const htmlContent = await startResponse.text();
+
+                // Display Result
+                statusDiv.textContent = "분석 완료! 결과 지도를 표시합니다.";
+                statusDiv.style.color = "#059669"; // Green
+
+                // Inject the HTML directly into the iframe
+                resultFrame.srcdoc = htmlContent;
+                resultContainer.style.display = 'block';
+
+                // Scroll to result
+                resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            } catch (error) {
+                console.error("Analysis failed:", error);
+                statusDiv.textContent = "오류 발생: " + error.message;
+                statusDiv.style.color = "#dc2626"; // Red
+            } finally {
+                analyzeBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+
+</html>
