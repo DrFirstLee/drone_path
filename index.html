@@ -262,8 +262,9 @@
                         externalPanel.style.textAlign = 'left';
                         externalPanel.style.maxHeight = '300px';
                         externalPanel.style.overflowY = 'auto';
-                        // Insert before result container
-                        resultContainer.parentNode.insertBefore(externalPanel, resultContainer);
+                        externalPanel.style.marginTop = '2rem';
+                        // Insert after result container
+                        resultContainer.parentNode.insertBefore(externalPanel, resultContainer.nextSibling);
                     }
 
                     // Copy content
