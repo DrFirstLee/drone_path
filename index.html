@@ -234,11 +234,46 @@
                 }
 
                 // The server returns the raw HTML content of the map
-                const htmlContent = await startResponse.text();
+                let htmlContent = await startResponse.text();
 
                 // Display Result
                 statusDiv.textContent = "분석 완료! 결과 지도를 표시합니다.";
                 statusDiv.style.color = "#059669"; // Green
+
+                // [Update] Check for embedded CSV download panel and extract it to the main UI
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlContent, 'text/html');
+                const headings = Array.from(doc.querySelectorAll('h4'));
+                const downloadHeader = headings.find(h => h.textContent.includes('Segment CSV Downloads'));
+
+                let externalPanel = document.getElementById('externalDownloadPanel');
+                if (externalPanel) {
+                    externalPanel.style.display = 'none'; // Reset previous results
+                }
+
+                if (downloadHeader) {
+                    const downloadDiv = downloadHeader.parentElement;
+
+                    // Create container if not exists
+                    if (!externalPanel) {
+                        externalPanel = document.createElement('div');
+                        externalPanel.id = 'externalDownloadPanel';
+                        externalPanel.className = 'upload-card'; // Use existing card style
+                        externalPanel.style.textAlign = 'left';
+                        externalPanel.style.maxHeight = '300px';
+                        externalPanel.style.overflowY = 'auto';
+                        // Insert before result container
+                        resultContainer.parentNode.insertBefore(externalPanel, resultContainer);
+                    }
+
+                    // Copy content
+                    externalPanel.innerHTML = downloadDiv.innerHTML;
+                    externalPanel.style.display = 'block';
+
+                    // Remove from the map HTML so it doesn't cover the map
+                    downloadDiv.remove();
+                    htmlContent = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+                }
 
                 // Inject the HTML directly into the iframe
                 resultFrame.srcdoc = htmlContent;
