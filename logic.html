@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>드론 비행 분석 파이프라인</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap');
+
+        :root {
+            --bg: #0d1117;
+            --bg2: #161b22;
+            --bg3: #21262d;
+            --border: #30363d;
+            --text: #e6edf3;
+            --text2: #8b949e;
+            --blue: #58a6ff;
+            --green: #3fb950;
+            --orange: #ff7b37;
+            --purple: #bc8cff;
+            --yellow: #e3b341;
+            --red: #f85149;
+            --cyan: #39d353;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Noto Sans KR', sans-serif;
+            line-height: 1.7;
+            padding: 40px 20px 80px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        /* ── Header ── */
+        header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        header .badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #1f6feb, #388bfd);
+            color: #fff;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            padding: 4px 14px;
+            border-radius: 20px;
+            margin-bottom: 16px;
+            text-transform: uppercase;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, var(--blue), var(--purple));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 12px;
+        }
+
+        header p {
+            color: var(--text2);
+            font-size: 1rem;
+        }
+
+        /* ── Timeline (pipeline flow) ── */
+        .pipeline {
+            position: relative;
+            padding-left: 44px;
+        }
+
+        .pipeline::before {
+            content: '';
+            position: absolute;
+            left: 15px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(to bottom, var(--blue), var(--purple), var(--orange));
+            border-radius: 2px;
+        }
+
+        .step {
+            position: relative;
+            margin-bottom: 40px;
+            animation: fadeIn 0.5s ease both;
+        }
+
+        .step:nth-child(1) {
+            animation-delay: 0.1s;
+        }
+
+        .step:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .step:nth-child(3) {
+            animation-delay: 0.3s;
+        }
+
+        .step:nth-child(4) {
+            animation-delay: 0.4s;
+        }
+
+        .step:nth-child(5) {
+            animation-delay: 0.5s;
+        }
+
+        .step:nth-child(6) {
+            animation-delay: 0.6s;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateX(-12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .step-dot {
+            position: absolute;
+            left: -37px;
+            top: 18px;
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 800;
+            border: 2px solid var(--bg);
+            z-index: 1;
+        }
+
+        .card {
+            background: var(--bg2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px 28px;
+            transition: border-color 0.2s, transform 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--blue);
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .card-icon {
+            font-size: 1.4rem;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .card-subtitle {
+            font-size: 0.78rem;
+            color: var(--text2);
+            margin-top: 2px;
+        }
+
+        .card-body {
+            color: var(--text2);
+            font-size: 0.92rem;
+        }
+
+        /* ── Feature Tags ── */
+        .tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 14px 0;
+        }
+
+        .tag {
+            background: var(--bg3);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--cyan);
+        }
+
+        /* ── State Badges ── */
+        .state-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .state-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: var(--bg3);
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+
+        .state-badge {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+            flex-shrink: 0;
+        }
+
+        .state-body {
+            flex: 1;
+        }
+
+        .state-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .state-desc {
+            font-size: 0.8rem;
+            color: var(--text2);
+            margin-top: 2px;
+        }
+
+        /* ── Code Block ── */
+        .code-block {
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px 18px;
+            margin: 14px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+            color: #a5d6ff;
+            overflow-x: auto;
+            white-space: pre;
+        }
+
+        .code-block .cm {
+            color: var(--text2);
+        }
+
+        .code-block .kw {
+            color: var(--purple);
+        }
+
+        .code-block .fn {
+            color: var(--yellow);
+        }
+
+        .code-block .num {
+            color: var(--orange);
+        }
+
+        .code-block .str {
+            color: var(--green);
+        }
+
+        /* ── Decision Box ── */
+        .decision {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .decision-box {
+            border-radius: 10px;
+            padding: 14px 16px;
+            font-size: 0.85rem;
+            border: 1px solid transparent;
+        }
+
+        .decision-yes {
+            background: rgba(63, 185, 80, 0.08);
+            border-color: rgba(63, 185, 80, 0.3);
+        }
+
+        .decision-yes .label {
+            color: var(--green);
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .decision-no {
+            background: rgba(255, 123, 55, 0.08);
+            border-color: rgba(255, 123, 55, 0.3);
+        }
+
+        .decision-no .label {
+            color: var(--orange);
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+
+        .decision-box p {
+            color: var(--text2);
+            line-height: 1.5;
+        }
+
+        /* ── Pattern Box ── */
+        .pattern-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .pattern-box {
+            background: var(--bg3);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+        }
+
+        .pattern-before {
+            color: var(--text2);
+            margin-bottom: 4px;
+        }
+
+        .pattern-after {
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .pattern-label {
+            font-size: 0.72rem;
+            color: var(--text2);
+            margin-bottom: 8px;
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        /* ── Map Legend ── */
+        .legend {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            background: var(--bg3);
+            border-radius: 8px;
+            padding: 10px 14px;
+        }
+
+        .legend-line {
+            width: 48px;
+            height: 4px;
+            border-radius: 2px;
+            flex-shrink: 0;
+        }
+
+        .legend-meta {
+            flex: 1;
+        }
+
+        .legend-name {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .legend-detail {
+            font-size: 0.78rem;
+            color: var(--text2);
+        }
+
+        /* ── Summary Table ── */
+        .summary-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 14px;
+            font-size: 0.87rem;
+        }
+
+        .summary-table th {
+            background: var(--bg3);
+            color: var(--text2);
+            font-weight: 600;
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .summary-table td {
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text2);
+            vertical-align: middle;
+        }
+
+        .summary-table tr:hover td {
+            background: var(--bg3);
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.82rem;
+        }
+
+        /* ── Section Title ── */
+        .section-label {
+            font-size: 0.73rem;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            color: var(--text2);
+            margin-bottom: 8px;
+        }
+
+        /* ── Info callout ── */
+        .callout {
+            background: rgba(88, 166, 255, 0.07);
+            border-left: 3px solid var(--blue);
+            border-radius: 0 8px 8px 0;
+            padding: 12px 16px;
+            margin-top: 14px;
+            font-size: 0.85rem;
+            color: var(--text2);
+        }
+
+        .callout strong {
+            color: var(--blue);
+        }
+
+        /* ── Footer ── */
+        footer {
+            text-align: center;
+            margin-top: 60px;
+            color: var(--text2);
+            font-size: 0.8rem;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <!-- 3줄 요약 배너 -->
+        <div style="
+            background: linear-gradient(135deg, rgba(31,111,235,0.12), rgba(188,140,255,0.10));
+            border: 1px solid rgba(88,166,255,0.25);
+            border-radius: 14px;
+            padding: 22px 28px;
+            margin-bottom: 36px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        ">
+            <div
+                style="font-size:0.72rem; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:#8b949e; margin-bottom:4px;">
+                📋 3줄 요약</div>
+            <div style="display:flex; align-items:flex-start; gap:12px;">
+                <span
+                    style="background:linear-gradient(135deg,#1f6feb,#388bfd); color:#fff; border-radius:6px; padding:2px 9px; font-size:0.78rem; font-weight:700; flex-shrink:0; margin-top:1px;">1</span>
+                <span style="color:#e6edf3; font-size:0.95rem; line-height:1.6;"><strong style="color:#58a6ff;">HMM
+                        클러스터링</strong>으로 드론 비행 구간을 <em>직선(Line)</em>과 <em>회전(Rotate)</em>으로 자동 분리하고, 각 구간에 고유 세그먼트 ID를
+                    부여합니다.</span>
+            </div>
+            <div style="display:flex; align-items:flex-start; gap:12px;">
+                <span
+                    style="background:linear-gradient(135deg,#ff7b37,#f85149); color:#fff; border-radius:6px; padding:2px 9px; font-size:0.78rem; font-weight:700; flex-shrink:0; margin-top:1px;">2</span>
+                <span style="color:#e6edf3; font-size:0.95rem; line-height:1.6;"><strong style="color:#ff7b37;">PCA 선형성
+                        + Yaw 변화량</strong> 복합 조건으로 회전으로 오분류된 직선 구간(<em>Rotate_Error</em>)을 정밀 식별합니다.</span>
+            </div>
+            <div style="display:flex; align-items:flex-start; gap:12px;">
+                <span
+                    style="background:linear-gradient(135deg,#3fb950,#2ea043); color:#fff; border-radius:6px; padding:2px 9px; font-size:0.78rem; font-weight:700; flex-shrink:0; margin-top:1px;">3</span>
+                <span style="color:#e6edf3; font-size:0.95rem; line-height:1.6;"><strong style="color:#3fb950;">체인 병합
+                        알고리즘</strong>으로 Line-Error-Line 패턴을 하나의 직선 세그먼트로 통합 후, Folium 지도에 색상·선 스타일을 달리해 시각화합니다.</span>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <header>
+            <div class="badge">🚁 Analysis Pipeline</div>
+            <h1>드론 비행 경로 분석</h1>
+            <p>HMM 클러스터링 → Rotate_Error 판별 → 세그먼트 병합까지의 전체 흐름</p>
+        </header>
+
+        <!-- Pipeline -->
+        <div class="pipeline">
+
+            <!-- STEP 1: HMM Clustering -->
+            <div class="step">
+                <div class="step-dot" style="background: linear-gradient(135deg,#1f6feb,#388bfd); color:#fff;">1</div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🧠</span>
+                        <div>
+                            <div class="card-title">HMM 클러스터링 (직선 vs 회전 분리)</div>
+                            <div class="card-subtitle">GaussianHMM · K-Means Fallback</div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p>4가지 비행 특성 피처를 표준화한 뒤 <strong style="color:var(--blue)">GaussianHMM (n=2)</strong>으로 각 샘플을
+                            <em>직선(Straight)</em>과 <em>회전(Turn)</em>, 두 상태로 분류합니다.
+                        </p>
+
+                        <div class="section-label" style="margin-top:16px;">입력 피처</div>
+                        <div class="tags">
+                            <span class="tag">Yaw_rate</span>
+                            <span class="tag">Yaw_std</span>
+                            <span class="tag">Roll_abs</span>
+                            <span class="tag">Centripetal_Acc</span>
+                        </div>
+
+                        <div class="code-block"><span class="cm"># 피처 합이 큰 클러스터 = Turn</span>
+                            <span class="kw">model</span> = GaussianHMM(n_components=<span class="num">2</span>,
+                            covariance_type=<span class="str">"diag"</span>)
+                            df[<span class="str">'State_Raw'</span>] = model.predict(X_scaled)
+                            turn_label = argmax(state_means) <span class="cm"># 피처 합 기준</span>
+
+                            <span class="cm"># 0 = Straight / 1 = Turn</span>
+                            df[<span class="str">'State'</span>] = (df[<span class="str">'State_Raw'</span>] ==
+                            turn_label).astype(int)
+                        </div>
+
+                        <div class="state-list">
+                            <div class="state-item">
+                                <div class="state-badge" style="background:rgba(88,166,255,.15);color:var(--blue);">0
+                                </div>
+                                <div class="state-body">
+                                    <div class="state-name">Straight</div>
+                                    <div class="state-desc">Yaw·Roll 변화 작음 → 직선 비행 구간</div>
+                                </div>
+                            </div>
+                            <div class="state-item">
+                                <div class="state-badge" style="background:rgba(188,140,255,.15);color:var(--purple);">1
+                                </div>
+                                <div class="state-body">
+                                    <div class="state-name">Turn</div>
+                                    <div class="state-desc">Yaw·Roll 변화 큼 → 회전 또는 방향 전환 구간</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: Segment ID -->
+            <div class="step">
+                <div class="step-dot" style="background: linear-gradient(135deg,#bc8cff,#8b5cf6); color:#fff;">2</div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🔢</span>
+                        <div>
+                            <div class="card-title">세그먼트 ID 부여</div>
+                            <div class="card-subtitle">State 전환마다 새 ID 생성</div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p>State가 바뀌는 순간마다 새 세그먼트 번호를 누적 부여합니다.<br>
+                            연속된 같은 State는 하나의 ID를 공유합니다.</p>
+
+                        <div class="code-block">df[<span class="str">'Segment_Change'</span>] = df[<span
+                                class="str">'State_Smooth'</span>].diff().abs()
+                            df[<span class="str">'Final_Segment_ID'</span>] = Segment_Change.cumsum()
+
+                            <span class="cm"># 예: 0 0 0 1 1 1 0 0 1 1
+                                # → ID: 0 0 0 1 1 1 2 2 3 3</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: Rotate_Error -->
+            <div class="step">
+                <div class="step-dot" style="background: linear-gradient(135deg,#ff7b37,#f85149); color:#fff;">3</div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🔍</span>
+                        <div>
+                            <div class="card-title">Rotate_Error 판별</div>
+                            <div class="card-subtitle">PCA 선형성 + Yaw 총 변화량 복합 판단</div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p>HMM이 <em>Turn(1)</em>으로 분류한 구간 중 <strong style="color:var(--orange)">실제로는 직선 비행인 구간</strong>을
+                            걸러냅니다.<br>
+                            두 조건이 <u>모두</u> 참이어야 <code style="color:var(--orange)">Rotate_Error</code>로 분류됩니다.</p>
+
+                        <div style="margin-top:16px; display:grid; gap:12px;">
+                            <div style="background:var(--bg3); border-radius:10px; padding:14px 16px;">
+                                <div style="color:var(--blue); font-weight:700; margin-bottom:8px;">① GPS 선형성 검사 (PCA)
+                                </div>
+                                <p style="font-size:.87rem; color:var(--text2);">
+                                    Rotate 구간의 위도/경도 좌표 전체에 PCA를 적용합니다.<br>
+                                    <strong style="color:var(--text)">1st 주성분 설명 비율 ≥ 0.97</strong>이면 경로가 직선 형태로 판단됩니다.
+                                </p>
+                                <div class="code-block" style="margin-top:10px;">pca.explained_variance_ratio_[<span
+                                        class="num">0</span>] >= <span class="num">0.97</span>
+                                    <span class="cm"># 원·8자 비행: ~0.5 (낮음 → 회전)
+                                        # 직선 비행: ~0.99 (높음 → Error 후보)</span>
+                                </div>
+                            </div>
+
+                            <div style="background:var(--bg3); border-radius:10px; padding:14px 16px;">
+                                <div style="color:var(--purple); font-weight:700; margin-bottom:8px;">② Yaw 총 변화량 검사
+                                </div>
+                                <p style="font-size:.87rem; color:var(--text2);">
+                                    구간 내 Yaw_unwrap의 최댓값 – 최솟값을 계산합니다.<br>
+                                    <strong style="color:var(--text)">Yaw 변화 &lt; 45°</strong>면 방향이 실질적으로 바뀌지 않은 것으로
+                                    봅니다.
+                                </p>
+                                <div class="code-block" style="margin-top:10px;">yaw_change = Yaw_unwrap.max() -
+                                    Yaw_unwrap.min()
+                                    yaw_change &lt; <span class="num">45.0</span> <span class="cm"># 도(°)</span>
+
+                                    <span class="cm"># 직선 비행: ~0–10° → Error 후보
+                                        # 130° 꺾임(V자): ~130° → 실제 회전 ✅</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="decision">
+                            <div class="decision-yes">
+                                <div class="label">✅ 정상 Rotate (State_Final = 1)</div>
+                                <p>GPS가 2D로 퍼짐 (원/8자)<br><em>또는</em><br>Yaw 변화 ≥ 45° (V자 꺾임 포함)</p>
+                            </div>
+                            <div class="decision-no">
+                                <div class="label">⚠️ Rotate_Error (State_Final = 3)</div>
+                                <p>GPS가 직선 형태 (PCA ratio ≥ 0.97)<br><em>동시에</em><br>Yaw 변화 &lt; 45°</p>
+                            </div>
+                        </div>
+
+                        <div class="callout">
+                            <strong>💡 V자(헤어핀) 예외 처리</strong><br>
+                            130° 꺾임은 GPS 경로가 좁은 V자라 PCA로 직선처럼 보일 수 있습니다.<br>
+                            하지만 Yaw 변화량이 ~130°로 크기 때문에 ② 조건에서 걸러져 <strong>정상 Rotate</strong>로 올바르게 분류됩니다.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 4: Chain Merge -->
+            <div class="step">
+                <div class="step-dot" style="background: linear-gradient(135deg,#3fb950,#2ea043); color:#fff;">4</div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🔗</span>
+                        <div>
+                            <div class="card-title">Line ↔ Rotate_Error 체인 병합</div>
+                            <div class="card-subtitle">연속된 L-E-L-E-L 패턴도 하나로 통합</div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <p>실제 Rotate(1)에 의해 끊기지 않는 한, <code style="color:var(--blue)">Line(0)</code>과 <code
+                                style="color:var(--orange)">Rotate_Error(3)</code>가 이어진 구간들을 하나의 "run"으로 묶습니다.<br>
+                            run 내에서 <strong>첫 Line ~ 마지막 Line 사이</strong>의 모든 세그먼트를 첫 Line의 ID로 통합합니다.</p>
+
+                        <div class="section-label" style="margin-top:16px;">병합 패턴 예시</div>
+                        <div class="pattern-grid">
+                            <div class="pattern-box">
+                                <div class="pattern-label">3구간 패턴 (기본)</div>
+                                <div class="pattern-before">L – E – L</div>
+                                <div class="pattern-after">→ L ————</div>
+                            </div>
+                            <div class="pattern-box">
+                                <div class="pattern-label">5구간 체인</div>
+                                <div class="pattern-before">L – E – L – E – L</div>
+                                <div class="pattern-after">→ L —————————</div>
+                            </div>
+                            <div class="pattern-box">
+                                <div class="pattern-label">7구간 체인</div>
+                                <div class="pattern-before">L – E – L – E – L – E – L</div>
+                                <div class="pattern-after">→ L ——————————————</div>
+                            </div>
+                            <div class="pattern-box">
+                                <div class="pattern-label">앞/뒤 고립 Error 유지</div>
+                                <div class="pattern-before">E – L – E – L – E</div>
+                                <div class="pattern-after">E | L ——— | E</div>
+                            </div>
+                        </div>
+
+                        <div class="callout" style="margin-top:16px;">
+                            <strong>규칙 요약</strong><br>
+                            • <strong>앞에 Line 없는 Error</strong>: 그대로 Rotate_Error 유지<br>
+                            • <strong>뒤에 Line 없는 Error</strong>: 그대로 Rotate_Error 유지<br>
+                            • <strong>실제 Rotate(1)는 경계</strong>: run을 강제로 분리하여 병합 영역을 제한<br>
+                            • 병합된 구간은 모두 <code>State_Final = 0</code> (Line)으로 교정
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 5: Map Visualization -->
+            <div class="step">
+                <div class="step-dot" style="background: linear-gradient(135deg,#e3b341,#d29922); color:#fff;">5</div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">🗺️</span>
+                        <div>
+                            <div class="card-title">지도 시각화 (Folium)</div>
+                            <div class="card-subtitle">타입별 색상·스타일 구분 표시</div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="legend">
+                            <div class="legend-item">
+                                <div class="legend-line" style="background:var(--blue);"></div>
+                                <div class="legend-meta">
+                                    <div class="legend-name">Line &nbsp;<span
+                                            style="font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--text2)">State_Final
+                                            = 0</span></div>
+                                    <div class="legend-detail">실선 3px · 팔레트 색상 순환 · 레이블: Line-N</div>
+                                </div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-line"
+                                    style="background:var(--purple); border-top: 2px dashed var(--purple); height: 0;">
+                                </div>
+                                <div class="legend-meta">
+                                    <div class="legend-name">Rotate &nbsp;<span
+                                            style="font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--text2)">State_Final
+                                            = 1</span></div>
+                                    <div class="legend-detail">점선(5,5) 5px · 팔레트 색상 순환 · 레이블: Rotate-N</div>
+                                </div>
+                            </div>
+                            <div class="legend-item">
+                                <div class="legend-line"
+                                    style="background:var(--orange); border-top: 2px dashed var(--orange); height:0;">
+                                </div>
+                                <div class="legend-meta">
+                                    <div class="legend-name">Rotate_Error &nbsp;<span
+                                            style="font-family:'JetBrains Mono',monospace;font-size:.78rem;color:var(--text2)">State_Final
+                                            = 3</span></div>
+                                    <div class="legend-detail">긴 점선(10,5) 5px · 주황색 고정 · 레이블: ⚠️ Rotate_Error-N</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <p style="margin-top:14px; font-size:.87rem;">
+                            같은 <code>Final_Segment_ID</code>를 가진 포인트가 시간상 불연속인 경우,
+                            <strong>인덱스 갭을 감지</strong>하여 별도 선으로 분리해 그립니다. (동그란 구간이 직선으로 연결되는 버그 방지)
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 6: Final State Summary -->
+            <div class="step">
+                <div class="step-dot" style="background: linear-gradient(135deg,#39d353,#26a641); color:#fff;">6</div>
+                <div class="card">
+                    <div class="card-header">
+                        <span class="card-icon">📊</span>
+                        <div>
+                            <div class="card-title">최종 State 정의 요약</div>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <table class="summary-table">
+                            <thead>
+                                <tr>
+                                    <th>State_Final</th>
+                                    <th>이름</th>
+                                    <th>판단 기준</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><span class="mono" style="color:var(--blue);">0</span></td>
+                                    <td><strong style="color:var(--blue);">Line</strong></td>
+                                    <td>HMM → Straight, 또는 Rotate_Error가 Line으로 병합된 구간</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="mono" style="color:var(--purple);">1</span></td>
+                                    <td><strong style="color:var(--purple);">Rotate</strong></td>
+                                    <td>HMM → Turn <em>이고</em> (GPS 2D 분포 or Yaw ≥ 45°)</td>
+                                </tr>
+                                <tr>
+                                    <td><span class="mono" style="color:var(--orange);">3</span></td>
+                                    <td><strong style="color:var(--orange);">Rotate_Error</strong></td>
+                                    <td>HMM → Turn <em>이지만</em> GPS가 직선형 <em>이고</em> Yaw &lt; 45°<br>
+                                        <span style="font-size:.78rem;">(1자 직선 비행 등 오분류 구간)</span>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /pipeline -->
+
+        <footer>
+            Naranja Drone Analysis Pipeline &nbsp;·&nbsp; 2026
+        </footer>
+
+    </div>
+</body>
+
+</html>
