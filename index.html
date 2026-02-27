@@ -184,6 +184,217 @@
         const resultFrame = document.getElementById('resultFrame');
         const dropZone = document.getElementById('dropZone');
 
+        let currentClusters = [];
+
+        function initMergePanel() {
+            let mergePanel = document.getElementById('mergePanelContainer');
+            if (!mergePanel) {
+                mergePanel = document.createElement('div');
+                mergePanel.id = 'mergePanelContainer';
+                mergePanel.className = 'upload-card';
+                mergePanel.style.textAlign = 'left';
+                mergePanel.style.marginTop = '2rem';
+                mergePanel.style.display = 'none';
+                mergePanel.innerHTML = `
+                    <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">🔗 클러스터 병합 (Merge)</h3>
+                    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                        <select id="mergeSelect1" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
+                        <span style="font-weight: bold; font-size: 1.5rem; color: #6b7280;">+</span>
+                        <select id="mergeSelect2" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
+                        <button id="mergeBtn" class="button" style="padding: 0.75rem 2rem;">병합하기</button>
+                    </div>
+                `;
+                resultContainer.parentNode.insertBefore(mergePanel, resultContainer.nextSibling);
+
+                document.getElementById('mergeBtn').addEventListener('click', performMerge);
+            }
+        }
+
+        function extractClustersFromPanel() {
+            const panel = document.getElementById('externalDownloadPanel');
+            if (!panel) return;
+
+            const links = panel.querySelectorAll('a');
+            currentClusters = [];
+            links.forEach(link => {
+                const filename = link.getAttribute('download');
+                if (!filename) return;
+                const name = filename.replace('.csv', '');
+                const lastDash = name.lastIndexOf('-');
+                if (lastDash === -1) return;
+
+                const type = name.substring(0, lastDash);
+                const num = parseInt(name.substring(lastDash + 1));
+
+                currentClusters.push({
+                    name: name,
+                    type: type,
+                    id: num,
+                    b64: link.href.split(',')[1],
+                    linkElement: link
+                });
+            });
+
+            currentClusters.sort((a, b) => a.id - b.id);
+            updateMergeDropdowns();
+
+            const mergePanel = document.getElementById('mergePanelContainer');
+            if (mergePanel) mergePanel.style.display = currentClusters.length > 1 ? 'block' : 'none';
+        }
+
+        function updateMergeDropdowns() {
+            const select1 = document.getElementById('mergeSelect1');
+            const select2 = document.getElementById('mergeSelect2');
+            if (!select1 || !select2) return;
+
+            const val1 = select1.value;
+            const val2 = select2.value;
+
+            select1.innerHTML = '';
+            select2.innerHTML = '';
+
+            currentClusters.forEach(c => {
+                const option1 = document.createElement('option');
+                option1.value = c.id;
+                option1.textContent = c.name;
+                select1.appendChild(option1);
+
+                const option2 = document.createElement('option');
+                option2.value = c.id;
+                option2.textContent = c.name;
+                select2.appendChild(option2);
+            });
+
+            if (val1 && select1.querySelector(`option[value="${val1}"]`)) select1.value = val1;
+            if (val2 && select2.querySelector(`option[value="${val2}"]`)) select2.value = val2;
+        }
+
+        function performMerge() {
+            const id1 = parseInt(document.getElementById('mergeSelect1').value);
+            const id2 = parseInt(document.getElementById('mergeSelect2').value);
+
+            if (id1 === id2) {
+                alert("서로 다른 두 클러스터를 선택해주세요.");
+                return;
+            }
+
+            const cPrimary = currentClusters.find(c => c.id === Math.min(id1, id2));
+            const cSecondary = currentClusters.find(c => c.id === Math.max(id1, id2));
+
+            if (!cPrimary || !cSecondary) return;
+
+            try {
+                // 1. Merge CSV files
+                const csv1 = decodeURIComponent(escape(atob(cPrimary.b64)));
+                const csv2 = decodeURIComponent(escape(atob(cSecondary.b64)));
+
+                const lines2 = csv2.split(/\r?\n/);
+                if (lines2.length > 0) lines2.shift(); // remove header
+
+                const mergedCsv = csv1 + (csv1.endsWith('\n') ? '' : '\n') + lines2.join('\n');
+                cPrimary.b64 = btoa(unescape(encodeURIComponent(mergedCsv)));
+                cPrimary.linkElement.href = 'data:text/csv;base64,' + cPrimary.b64;
+
+                // Remove secondary CSV from UI
+                if (cSecondary.linkElement.parentNode) {
+                    cSecondary.linkElement.parentNode.removeChild(cSecondary.linkElement);
+                }
+
+                // Update tracked clusters
+                currentClusters = currentClusters.filter(c => c.id !== cSecondary.id);
+                updateMergeDropdowns();
+
+                if (currentClusters.length <= 1) {
+                    document.getElementById('mergePanelContainer').style.display = 'none';
+                }
+
+                // 2. Merge visually on Map
+                const iframeWin = document.getElementById('resultFrame').contentWindow;
+                let mapObj = null;
+                for (let key in iframeWin) {
+                    if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                        mapObj = iframeWin[key];
+                        break;
+                    }
+                }
+
+                if (mapObj) {
+                    let primaryColor = '#000000';
+                    let primaryTooltip = "";
+                    let lastP1 = null;
+                    let firstP2 = null;
+
+                    // Get primary style details
+                    mapObj.eachLayer(layer => {
+                        if (layer.options && layer.options.color && layer.getTooltip) {
+                            const tt = layer.getTooltip();
+                            if (tt && tt.getContent() && tt.getContent().includes(`ID ${cPrimary.id}:`)) {
+                                primaryColor = layer.options.color;
+                                primaryTooltip = tt.getContent();
+                            }
+                        }
+                    });
+
+                    // Apply to secondary and find coordinate boundaries for connecting line
+                    mapObj.eachLayer(layer => {
+                        // Apply to secondary polylines
+                        if (layer.options && layer.options.color && layer.getTooltip) {
+                            const tt = layer.getTooltip();
+                            if (tt && tt.getContent() && tt.getContent().includes(`ID ${cSecondary.id}:`)) {
+                                layer.setStyle({ color: primaryColor });
+                                layer.setTooltipContent(primaryTooltip || `ID ${cPrimary.id} (Merged)`);
+
+                                if (layer.getLatLngs) {
+                                    const latlngs = layer.getLatLngs();
+                                    if (latlngs.length > 0 && !firstP2) firstP2 = latlngs[0];
+                                }
+                            } else if (tt && tt.getContent() && tt.getContent().includes(`ID ${cPrimary.id}:`)) {
+                                if (layer.getLatLngs) {
+                                    const latlngs = layer.getLatLngs();
+                                    if (latlngs.length > 0) lastP1 = latlngs[latlngs.length - 1]; // last point of primary
+                                }
+                            }
+                        }
+
+                        // Apply markers
+                        if (layer.options && layer.options.icon && layer.options.icon.options && layer.options.icon.options.html) {
+                            const html = layer.options.icon.options.html;
+                            if (html.includes(`${cSecondary.name}`) || html.includes(`ID ${cSecondary.id}`)) {
+                                // Large marker text -> remove
+                                if (html.includes(`${cSecondary.name}`)) {
+                                    mapObj.removeLayer(layer);
+                                } else if (html.includes(`part start`)) {
+                                    // Small circle markers -> change color
+                                    layer.setStyle({ color: primaryColor });
+                                    const popup = layer.getPopup();
+                                    if (popup) {
+                                        popup.setContent(popup.getContent().replace(`ID ${cSecondary.id}`, `ID ${cPrimary.id}`));
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                    // Add connecting line
+                    if (lastP1 && firstP2 && iframeWin.L) {
+                        const connectingLine = iframeWin.L.polyline([lastP1, firstP2], {
+                            color: primaryColor,
+                            weight: 4,
+                            opacity: 0.8,
+                            dashArray: '5, 5'
+                        });
+                        connectingLine.bindTooltip(primaryTooltip || `ID ${cPrimary.id} (Merged)`);
+                        connectingLine.addTo(mapObj);
+                    }
+                }
+
+                alert(`${cSecondary.name} 클러스터가 ${cPrimary.name} 에 성공적으로 병합되었습니다!`);
+            } catch (err) {
+                console.error("Merge error:", err);
+                alert("병합 중 오류가 발생했습니다: " + err.message);
+            }
+        }
+
         // File selection handler
         fileInput.addEventListener('change', function () {
             if (this.files && this.files.length > 0) {
@@ -292,6 +503,9 @@
                 resultFrame.srcdoc = htmlContent;
                 resultContainer.style.display = 'block';
 
+                initMergePanel();
+                extractClustersFromPanel();
+
                 // Scroll to result
                 resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
@@ -301,6 +515,15 @@
                 statusDiv.style.color = "#dc2626"; // Red
             } finally {
                 analyzeBtn.disabled = false;
+            }
+        });
+
+        // 엔터키 입력 시 분석 시작
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                if (fileInput.files && fileInput.files.length > 0 && !analyzeBtn.disabled) {
+                    analyzeBtn.click();
+                }
             }
         });
     </script>
