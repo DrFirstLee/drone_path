@@ -556,6 +556,7 @@
 
                             if (!splitLayerInfo) {
                                 splitLayerInfo = {
+                                    pts1,
                                     pts2,
                                     color: layer.options.color,
                                     weight: layer.options.weight,
@@ -578,7 +579,7 @@
 
                     // Add new layer and label OUTSIDE the eachLayer loop
                     if (splitLayerInfo) {
-                        const { pts2, color, weight, opacity } = splitLayerInfo;
+                        const { pts1, pts2, color, weight, opacity } = splitLayerInfo;
 
                         // Generate a visually distinct color for the new split section
                         const distinctColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080', '#000000'];
@@ -604,33 +605,42 @@
 
                         if (pts2.length > 0) {
                             const MathFloor = Math.floor;
-                            const labelPos = pts2[MathFloor(pts2.length / 2)];
+                            const labelPos2 = pts2[MathFloor(pts2.length / 2)];
                             // Use Folium-like marker style: Just the text on the map with no background, just the text color
-                            const foliumHtml = `<div style="color: ${newColor}; white-space: nowrap; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;">${name2}</div>`;
-                            const labelIcon = iframeWin.L.divIcon({
+                            const foliumHtml2 = `<div style="color: ${newColor}; white-space: nowrap; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;">${name2}</div>`;
+                            const labelIcon2 = iframeWin.L.divIcon({
                                 className: 'leaflet-popup-marker', // Empty class to remove default leaflet styles
-                                html: foliumHtml,
+                                html: foliumHtml2,
                                 iconSize: null,
                                 iconAnchor: [0, 0]
                             });
-                            iframeWin.L.marker(labelPos, { icon: labelIcon, interactive: false }).addTo(mapObj);
+                            iframeWin.L.marker(labelPos2, { icon: labelIcon2, interactive: false }).addTo(mapObj);
                             console.log('[Split] Added new polyline and marker for', name2, 'with color', newColor);
                         }
+
+                        // Move and update existing labels
+                        labelsToUpdate.forEach(({ layer, html, oldName }) => {
+                            const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const newHtml = html.replace(new RegExp(escaped, 'g'), name1);
+                            layer.setIcon(iframeWin.L.divIcon({
+                                className: layer.options.icon.options.className,
+                                html: newHtml,
+                                iconSize: layer.options.icon.options.iconSize,
+                                iconAnchor: layer.options.icon.options.iconAnchor
+                            }));
+
+                            // Recalculate and set new position to center of the 1st segment
+                            if (pts1.length > 0) {
+                                const MathFloor = Math.floor;
+                                const newPos1 = pts1[MathFloor(pts1.length / 2)];
+                                layer.setLatLng(newPos1);
+                            }
+                        });
+
                     } else {
                         console.warn('[Split] No matching layer found in map! Cannot split visually.');
                     }
 
-                    // Update existing labels
-                    labelsToUpdate.forEach(({ layer, html, oldName }) => {
-                        const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                        const newHtml = html.replace(new RegExp(escaped, 'g'), name1);
-                        layer.setIcon(iframeWin.L.divIcon({
-                            className: layer.options.icon.options.className,
-                            html: newHtml,
-                            iconSize: layer.options.icon.options.iconSize,
-                            iconAnchor: layer.options.icon.options.iconAnchor
-                        }));
-                    });
                 } else {
                     console.warn('[Split] mapObj or L not found in iframe.');
                 }
