@@ -217,11 +217,20 @@
                             <button id="splitBtn" class="button" style="padding: 0.75rem 2rem; background-color: #ef4444;">분리하기</button>
                         </div>
                     </div>
+                    <div id="renameSection" style="border-top: 1px solid #e5e7eb; pt-4; margin-top: 1rem; padding-top: 1.5rem;">
+                        <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">✏️ 클러스터 이름 변경 (Rename)</h3>
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <select id="renameSelect" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 200px;"></select>
+                            <input type="text" id="renameInput" placeholder="새로운 이름 입력" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 200px;" autocomplete="off">
+                            <button id="renameBtn" class="button" style="padding: 0.75rem 2rem; background-color: #10b981;">변경하기</button>
+                        </div>
+                    </div>
                 `;
                 resultContainer.parentNode.insertBefore(mergePanel, resultContainer.nextSibling);
 
                 document.getElementById('mergeBtn').addEventListener('click', performMerge);
                 document.getElementById('splitBtn').addEventListener('click', performSplit);
+                document.getElementById('renameBtn').addEventListener('click', performRename);
 
                 // Add split preview listeners
                 document.getElementById('splitPointRange').addEventListener('input', updateSplitPreview);
@@ -311,6 +320,7 @@
                 mergePanel.style.display = currentClusters.length >= 1 ? 'block' : 'none';
                 document.getElementById('mergeSection').style.display = currentClusters.length > 1 ? 'block' : 'none';
                 document.getElementById('splitSection').style.display = currentClusters.length >= 1 ? 'block' : 'none';
+                document.getElementById('renameSection').style.display = currentClusters.length >= 1 ? 'block' : 'none';
             }
         }
 
@@ -319,15 +329,18 @@
             const select1 = document.getElementById('mergeSelect1');
             const select2 = document.getElementById('mergeSelect2');
             const splitSelect = document.getElementById('splitSelect');
-            if (!select1 || !select2 || !splitSelect) return;
+            const renameSelect = document.getElementById('renameSelect');
+            if (!select1 || !select2 || !splitSelect || !renameSelect) return;
 
             const val1 = select1.value;
             const val2 = select2.value;
             const valSplit = splitSelect.value;
+            const valRename = renameSelect.value;
 
             select1.innerHTML = '';
             select2.innerHTML = '';
             splitSelect.innerHTML = '';
+            renameSelect.innerHTML = '';
 
             currentClusters.forEach(c => {
                 const opt1 = new Option(c.name, c.id);
@@ -338,11 +351,89 @@
 
                 const optS = new Option(c.name, c.id);
                 splitSelect.add(optS);
+
+                const optR = new Option(c.name, c.id);
+                renameSelect.add(optR);
             });
 
             if (val1 && select1.querySelector(`option[value="${val1}"]`)) select1.value = val1;
             if (val2 && select2.querySelector(`option[value="${val2}"]`)) select2.value = val2;
             if (valSplit && splitSelect.querySelector(`option[value="${valSplit}"]`)) splitSelect.value = valSplit;
+            if (valRename && renameSelect.querySelector(`option[value="${valRename}"]`)) renameSelect.value = valRename;
+        }
+
+        function performRename() {
+            const renameId = parseInt(document.getElementById('renameSelect').value);
+            const newNameInput = document.getElementById('renameInput').value.trim();
+
+            if (!newNameInput) {
+                alert("새로운 이름을 입력해주세요.");
+                return;
+            }
+
+            const target = currentClusters.find(c => c.id === renameId);
+            if (!target) return;
+
+            if (currentClusters.some(c => c.name === newNameInput)) {
+                alert("이미 존재하는 이름입니다. 다른 이름을 사용해주세요.");
+                return;
+            }
+
+            const oldName = target.name;
+
+            try {
+                // Update internal state
+                target.name = newNameInput;
+
+                // Update UI: Download link element
+                target.linkElement.textContent = `Download ${newNameInput}.csv`;
+                target.linkElement.setAttribute('download', `${newNameInput}.csv`);
+
+                // Update Map
+                const iframeWin = document.getElementById('resultFrame').contentWindow;
+                let mapObj = null;
+                for (let key in iframeWin) {
+                    if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                        mapObj = iframeWin[key];
+                        break;
+                    }
+                }
+
+                if (mapObj) {
+                    mapObj.eachLayer(layer => {
+                        const tt = (layer.getTooltip && layer.getTooltip()) ? layer.getTooltip().getContent() : "";
+
+                        // Match Polyline by ID
+                        const matchById = tt && tt.includes(`ID ${target.id}:`);
+                        if (matchById) {
+                            layer.setTooltipContent(`ID ${target.id}: ${newNameInput}`);
+                        }
+
+                        // Also update existing labels (DivIcon markers)
+                        if (layer.options && layer.options.icon && layer.options.icon.options && layer.options.icon.options.html) {
+                            let html = layer.options.icon.options.html;
+                            if (html.includes(oldName)) {
+                                const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                const newHtml = html.replace(new RegExp(escaped, 'g'), newNameInput);
+                                layer.setIcon(iframeWin.L.divIcon({
+                                    className: layer.options.icon.options.className,
+                                    html: newHtml,
+                                    iconSize: layer.options.icon.options.iconSize,
+                                    iconAnchor: layer.options.icon.options.iconAnchor
+                                }));
+                            }
+                        }
+                    });
+                }
+
+                updateMergeDropdowns();
+                document.getElementById('renameInput').value = '';
+                alert(`이름이 '${oldName}'에서 '${newNameInput}'(으)로 변경되었습니다.`);
+
+            } catch (err) {
+                console.error("Rename error:", err);
+                alert("이름 변경 중 오류가 발생했습니다: " + err.message);
+            }
         }
 
         function performSplit() {
@@ -373,15 +464,23 @@
                 const csv2 = header + "\n" + part2Lines.join("\n");
 
                 // Determine name for the shorter one
-                let name1 = target.name;
-                let name2 = target.name;
-                const baseName = target.name.replace('_splitted', '');
+                let newBase = target.name.includes('_splitted') ? target.name.split('_splitted')[0] + '_splitted' : target.name + '_splitted';
+                let candidate = newBase;
+                let counter = 1;
+                const existingNames = currentClusters.map(c => c.name);
+
+                while (existingNames.includes(candidate) || candidate === target.name) {
+                    counter++;
+                    candidate = newBase + '_' + counter;
+                }
+
+                let name1, name2;
                 if (part1Lines.length < part2Lines.length) {
-                    name1 = baseName + "_splitted";
-                    name2 = baseName;
+                    name1 = candidate;
+                    name2 = target.name;
                 } else {
-                    name1 = baseName;
-                    name2 = baseName + "_splitted";
+                    name1 = target.name;
+                    name2 = candidate;
                 }
 
                 // Update UI: Modify original link, add new link
