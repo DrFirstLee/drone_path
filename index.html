@@ -185,6 +185,7 @@
         const dropZone = document.getElementById('dropZone');
 
         let currentClusters = [];
+        let splitPreviewLayer = null;
 
         function initMergePanel() {
             let mergePanel = document.getElementById('mergePanelContainer');
@@ -221,7 +222,60 @@
 
                 document.getElementById('mergeBtn').addEventListener('click', performMerge);
                 document.getElementById('splitBtn').addEventListener('click', performSplit);
+
+                // Add split preview listeners
+                document.getElementById('splitPointRange').addEventListener('input', updateSplitPreview);
+                document.getElementById('splitSelect').addEventListener('change', updateSplitPreview);
             }
+        }
+
+        function updateSplitPreview() {
+            const splitId = parseInt(document.getElementById('splitSelect').value);
+            const splitRatio = parseInt(document.getElementById('splitPointRange').value) / 100;
+            const target = currentClusters.find(c => c.id === splitId);
+
+            const iframeWin = document.getElementById('resultFrame').contentWindow;
+            let mapObj = null;
+            for (let key in iframeWin) {
+                if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                    mapObj = iframeWin[key];
+                    break;
+                }
+            }
+            if (!mapObj || !iframeWin.L) return;
+
+            // Remove existing preview
+            if (splitPreviewLayer) {
+                mapObj.removeLayer(splitPreviewLayer);
+                splitPreviewLayer = null;
+            }
+
+            if (!target) return;
+
+            mapObj.eachLayer(layer => {
+                const tt = (layer.getTooltip && layer.getTooltip()) ? layer.getTooltip().getContent() : "";
+                if (tt && tt.includes(`ID ${target.id}:`)) {
+                    if (layer.getLatLngs) {
+                        const latlngs = layer.getLatLngs();
+                        if (latlngs.length > 0) {
+                            const sIdx = Math.min(latlngs.length - 1, Math.floor(latlngs.length * splitRatio));
+                            const splitPoint = latlngs[sIdx];
+
+                            // Create a red dashed marker or circle at the split point
+                            splitPreviewLayer = iframeWin.L.circleMarker(splitPoint, {
+                                radius: 8,
+                                color: '#ef4444',
+                                weight: 2,
+                                opacity: 1,
+                                fillOpacity: 0.3,
+                                dashArray: '3, 3'
+                            }).bindTooltip("분리 지점 예시", { permanent: false, direction: 'top' });
+
+                            splitPreviewLayer.addTo(mapObj);
+                        }
+                    }
+                }
+            });
         }
 
         function extractClustersFromPanel() {
@@ -404,6 +458,21 @@
                 }
 
                 updateMergeDropdowns();
+
+                // Clear preview
+                if (splitPreviewLayer) {
+                    const iframeWin = document.getElementById('resultFrame').contentWindow;
+                    let mapObj = null;
+                    for (let key in iframeWin) {
+                        if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                            mapObj = iframeWin[key];
+                            break;
+                        }
+                    }
+                    if (mapObj) mapObj.removeLayer(splitPreviewLayer);
+                    splitPreviewLayer = null;
+                }
+
                 alert(`성공적으로 분리되었습니다.\n1번: ${name1} (${part1Lines.length}행)\n2번: ${name2} (${part2Lines.length}행)`);
 
             } catch (err) {
