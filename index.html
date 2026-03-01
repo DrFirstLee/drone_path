@@ -538,7 +538,7 @@
 
                         // Match by name OR by ID — whichever works
                         const matchById = tt && tt.includes(`ID ${target.id}:`);
-                        const matchByName = tt && tt.includes(target.name.replace('_splitted', ''));
+                        const matchByName = tt && tt.includes(target.name);
                         const isMatch = matchById || matchByName;
 
                         if (isMatch && layer.getLatLngs) {
@@ -568,7 +568,7 @@
                         // Collect labels to update (DivIcon markers)
                         if (layer.options && layer.options.icon && layer.options.icon.options && layer.options.icon.options.html) {
                             const html = layer.options.icon.options.html;
-                            const oldName = target.name.replace('_splitted', '');
+                            const oldName = target.name;
                             if (html.includes(oldName)) {
                                 labelsToUpdate.push({ layer, html, oldName });
                             }
