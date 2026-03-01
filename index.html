@@ -481,21 +481,39 @@
                     if (splitLayerInfo) {
                         const { pts2, color, weight, opacity } = splitLayerInfo;
 
-                        const layer2 = iframeWin.L.polyline(pts2, { color, weight, opacity });
+                        // Generate a visually distinct color for the new split section
+                        const distinctColors = ['#e6194b', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#f032e6', '#bcf60c', '#fabebe', '#008080', '#e6beff', '#9a6324', '#fffac8', '#800000', '#aaffc3', '#808000', '#ffd8b1', '#000075', '#808080', '#000000'];
+                        let newColor = color;
+                        for (let i = 0; i < 10; i++) {
+                            const candidate = distinctColors[Math.floor(Math.random() * distinctColors.length)];
+                            if (candidate !== color) {
+                                newColor = candidate;
+                                break;
+                            }
+                        }
+
+                        // We can also add a small dash pattern to make it even more distinct
+                        const layer2 = iframeWin.L.polyline(pts2, {
+                            color: newColor,
+                            weight: weight ? weight + 1 : 5,
+                            opacity: opacity,
+                            dashArray: '10, 10' // dashed line for visual separation
+                        });
                         layer2.bindTooltip(`ID ${newId}: ${name2}`);
                         layer2.addTo(mapObj);
                         layer2.on('click', (e) => handleMapLineClick(newId, e.latlng, layer2));
 
                         if (pts2.length > 0) {
-                            const labelPos = pts2[Math.floor(pts2.length / 2)];
-                            const labelHtml = `<div style="background-color:white; border:2px solid ${color}; border-radius:4px; padding:2px 6px; font-weight:bold; white-space:nowrap; font-size:11px; box-shadow:2px 2px 5px rgba(0,0,0,0.3);">${name2}</div>`;
+                            const MathFloor = Math.floor;
+                            const labelPos = pts2[MathFloor(pts2.length / 2)];
+                            const labelHtml = `<div style="background-color:white; border:2px solid ${newColor}; color: ${newColor}; border-radius:4px; padding:2px 6px; font-weight:bold; white-space:nowrap; font-size:11px; box-shadow:2px 2px 5px rgba(0,0,0,0.3);">${name2}</div>`;
                             const labelIcon = iframeWin.L.divIcon({
                                 className: 'custom-split-label',
                                 html: labelHtml,
                                 iconAnchor: [0, 12]
                             });
                             iframeWin.L.marker(labelPos, { icon: labelIcon, interactive: false }).addTo(mapObj);
-                            console.log('[Split] Added new polyline and label for', name2);
+                            console.log('[Split] Added new polyline and label for', name2, 'with color', newColor);
                         }
                     } else {
                         console.warn('[Split] No matching layer found in map! Cannot split visually.');
