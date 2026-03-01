@@ -569,7 +569,20 @@
                         if (layer.options && layer.options.icon && layer.options.icon.options && layer.options.icon.options.html) {
                             const html = layer.options.icon.options.html;
                             const oldName = target.name;
-                            if (html.includes(oldName)) {
+
+                            // Parse HTML to get pure text content
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = html;
+                            const textContent = tempDiv.textContent || tempDiv.innerText || "";
+
+                            // Try exact textual match.
+                            // However, sometimes html itself contains elements like svg that we don't want to match wrongly.
+                            // We use a RegExp to ensure oldName is matched as a whole word/token inside the string, not as a substring of something like "Line-5_splitted".
+                            const escapedName = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            // Match oldName where it's NOT immediately followed by _splitted or similar word chars
+                            const exactNameRegex = new RegExp(`(?<![a-zA-Z0-9_-])${escapedName}(?![a-zA-Z0-9_-])`);
+
+                            if (textContent.trim() === oldName.trim() || exactNameRegex.test(html) || html.includes(`>${oldName}<`)) {
                                 labelsToUpdate.push({ layer, html, oldName });
                             }
                         }
