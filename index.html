@@ -451,6 +451,28 @@
                                     // Add click handler to new layer
                                     layer2.on('click', (e) => handleMapLineClick(newId, e.latlng, layer2));
                                     layer2.setStyle({ cursor: 'pointer' });
+
+                                    // Add a permanent label marker for the new split part (matching original map style)
+                                    const centerPoint = pts2[Math.floor(pts2.length / 2)];
+                                    const labelIcon = iframeWin.L.divIcon({
+                                        className: 'custom-div-icon',
+                                        html: `<div style="background-color: white; border: 2px solid ${layer.options.color}; border-radius: 4px; padding: 2px 6px; font-weight: bold; white-space: nowrap; font-size: 12px; transform: translate(-50%, -100%); margin-top: -10px;">${name2}</div>`,
+                                        iconSize: [0, 0],
+                                        iconAnchor: [0, 0]
+                                    });
+                                    iframeWin.L.marker(centerPoint, { icon: labelIcon }).addTo(mapObj);
+                                }
+                            }
+                        }
+
+                        // Also update existing labels if any
+                        if (layer.options && layer.options.icon && layer.options.icon.options && layer.options.icon.options.html) {
+                            const html = layer.options.icon.options.html;
+                            if (html.includes(`ID ${target.id}:`) || html.includes(`>${target.name.replace('_splitted', '')}<`)) {
+                                layer.options.icon.options.html = html.replace(target.name.replace('_splitted', ''), name1);
+                                if (layer.getElement) {
+                                    const el = layer.getElement();
+                                    if (el) el.innerHTML = layer.options.icon.options.html;
                                 }
                             }
                         }
