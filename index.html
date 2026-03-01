@@ -605,14 +605,16 @@
                         if (pts2.length > 0) {
                             const MathFloor = Math.floor;
                             const labelPos = pts2[MathFloor(pts2.length / 2)];
-                            const labelHtml = `<div style="background-color:white; border:2px solid ${newColor}; color: ${newColor}; border-radius:4px; padding:2px 6px; font-weight:bold; white-space:nowrap; font-size:11px; box-shadow:2px 2px 5px rgba(0,0,0,0.3);">${name2}</div>`;
+                            // Use Folium-like marker style: Just the text on the map with no background, just the text color
+                            const foliumHtml = `<div style="color: ${newColor}; white-space: nowrap; font-size: 11px; font-weight: bold; text-shadow: 1px 1px 2px white, -1px -1px 2px white, 1px -1px 2px white, -1px 1px 2px white;">${name2}</div>`;
                             const labelIcon = iframeWin.L.divIcon({
-                                className: 'custom-split-label',
-                                html: labelHtml,
-                                iconAnchor: [0, 12]
+                                className: 'leaflet-popup-marker', // Empty class to remove default leaflet styles
+                                html: foliumHtml,
+                                iconSize: null,
+                                iconAnchor: [0, 0]
                             });
                             iframeWin.L.marker(labelPos, { icon: labelIcon, interactive: false }).addTo(mapObj);
-                            console.log('[Split] Added new polyline and label for', name2, 'with color', newColor);
+                            console.log('[Split] Added new polyline and marker for', name2, 'with color', newColor);
                         }
                     } else {
                         console.warn('[Split] No matching layer found in map! Cannot split visually.');
