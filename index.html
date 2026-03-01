@@ -196,17 +196,31 @@
                 mergePanel.style.marginTop = '2rem';
                 mergePanel.style.display = 'none';
                 mergePanel.innerHTML = `
-                    <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">🔗 클러스터 병합 (Merge)</h3>
-                    <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
-                        <select id="mergeSelect1" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
-                        <span style="font-weight: bold; font-size: 1.5rem; color: #6b7280;">+</span>
-                        <select id="mergeSelect2" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
-                        <button id="mergeBtn" class="button" style="padding: 0.75rem 2rem;">병합하기</button>
+                    <div id="mergeSection" style="margin-bottom: 2rem;">
+                        <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">🔗 클러스터 병합 (Merge)</h3>
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <select id="mergeSelect1" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
+                            <span style="font-weight: bold; font-size: 1.5rem; color: #6b7280;">+</span>
+                            <select id="mergeSelect2" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
+                            <button id="mergeBtn" class="button" style="padding: 0.75rem 2rem;">병합하기</button>
+                        </div>
+                    </div>
+                    <div id="splitSection" style="border-top: 1px solid #e5e7eb; pt-4; margin-top: 1rem; padding-top: 1.5rem;">
+                        <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">✂️ 클러스터 분리 (Split)</h3>
+                        <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
+                            <select id="splitSelect" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 200px;"></select>
+                            <div style="flex: 1; min-width: 250px;">
+                                <label style="display: block; font-size: 0.8rem; color: #6b7280; margin-bottom: 4px;">분리 시점 선택 (0% ~ 100%)</label>
+                                <input type="range" id="splitPointRange" min="1" max="99" value="50" style="width: 100%;">
+                            </div>
+                            <button id="splitBtn" class="button" style="padding: 0.75rem 2rem; background-color: #ef4444;">분리하기</button>
+                        </div>
                     </div>
                 `;
                 resultContainer.parentNode.insertBefore(mergePanel, resultContainer.nextSibling);
 
                 document.getElementById('mergeBtn').addEventListener('click', performMerge);
+                document.getElementById('splitBtn').addEventListener('click', performSplit);
             }
         }
 
@@ -239,34 +253,152 @@
             updateMergeDropdowns();
 
             const mergePanel = document.getElementById('mergePanelContainer');
-            if (mergePanel) mergePanel.style.display = currentClusters.length > 1 ? 'block' : 'none';
+            if (mergePanel) {
+                mergePanel.style.display = currentClusters.length >= 1 ? 'block' : 'none';
+                document.getElementById('mergeSection').style.display = currentClusters.length > 1 ? 'block' : 'none';
+                document.getElementById('splitSection').style.display = currentClusters.length >= 1 ? 'block' : 'none';
+            }
         }
 
         function updateMergeDropdowns() {
+
             const select1 = document.getElementById('mergeSelect1');
             const select2 = document.getElementById('mergeSelect2');
-            if (!select1 || !select2) return;
+            const splitSelect = document.getElementById('splitSelect');
+            if (!select1 || !select2 || !splitSelect) return;
 
             const val1 = select1.value;
             const val2 = select2.value;
+            const valSplit = splitSelect.value;
 
             select1.innerHTML = '';
             select2.innerHTML = '';
+            splitSelect.innerHTML = '';
 
             currentClusters.forEach(c => {
-                const option1 = document.createElement('option');
-                option1.value = c.id;
-                option1.textContent = c.name;
-                select1.appendChild(option1);
+                const opt1 = new Option(c.name, c.id);
+                select1.add(opt1);
 
-                const option2 = document.createElement('option');
-                option2.value = c.id;
-                option2.textContent = c.name;
-                select2.appendChild(option2);
+                const opt2 = new Option(c.name, c.id);
+                select2.add(opt2);
+
+                const optS = new Option(c.name, c.id);
+                splitSelect.add(optS);
             });
 
             if (val1 && select1.querySelector(`option[value="${val1}"]`)) select1.value = val1;
             if (val2 && select2.querySelector(`option[value="${val2}"]`)) select2.value = val2;
+            if (valSplit && splitSelect.querySelector(`option[value="${valSplit}"]`)) splitSelect.value = valSplit;
+        }
+
+        function performSplit() {
+            const splitId = parseInt(document.getElementById('splitSelect').value);
+            const splitRatio = parseInt(document.getElementById('splitPointRange').value) / 100;
+
+            const target = currentClusters.find(c => c.id === splitId);
+            if (!target) return;
+
+            try {
+                const csvContent = decodeURIComponent(escape(atob(target.b64)));
+                const lines = csvContent.split(/\r?\n/).filter(line => line.trim() !== "");
+                if (lines.length < 3) {
+                    alert("데이터가 너무 적어 분리할 수 없습니다.");
+                    return;
+                }
+
+                const header = lines[0];
+                const dataLines = lines.slice(1);
+                const splitIndex = Math.max(1, Math.min(dataLines.length - 1, Math.floor(dataLines.length * splitRatio)));
+
+                const part1Lines = dataLines.slice(0, splitIndex);
+                const part2Lines = dataLines.slice(splitIndex);
+
+                const csv1 = header + "\n" + part1Lines.join("\n");
+                const csv2 = header + "\n" + part2Lines.join("\n");
+
+                // Determine name for the shorter one
+                let name1 = target.name;
+                let name2 = target.name;
+                if (part1Lines.length < part2Lines.length) {
+                    name1 = target.name + "_splitted";
+                } else {
+                    name2 = target.name + "_splitted";
+                }
+
+                // Update UI: Modify original link, add new link
+                target.linkElement.textContent = `Download ${name1}.csv`;
+                target.linkElement.setAttribute('download', `${name1}.csv`);
+                target.b64 = btoa(unescape(encodeURIComponent(csv1)));
+                target.linkElement.href = 'data:text/csv;base64,' + target.b64;
+                target.name = name1;
+
+                const newLink = document.createElement('a');
+                newLink.textContent = `Download ${name2}.csv`;
+                newLink.setAttribute('download', `${name2}.csv`);
+                const b64_2 = btoa(unescape(encodeURIComponent(csv2)));
+                newLink.href = 'data:text/csv;base64,' + b64_2;
+                newLink.style.display = 'block';
+                newLink.style.margin = '5px 0';
+                newLink.style.color = '#3b82f6';
+                newLink.style.textDecoration = 'none';
+
+                target.linkElement.parentNode.insertBefore(newLink, target.linkElement.nextSibling);
+
+                // Add to internal state
+                const newId = Math.max(...currentClusters.map(c => c.id)) + 1;
+                currentClusters.push({
+                    name: name2,
+                    type: target.type,
+                    id: newId,
+                    b64: b64_2,
+                    linkElement: newLink
+                });
+
+                // Update Map
+                const iframeWin = document.getElementById('resultFrame').contentWindow;
+                let mapObj = null;
+                for (let key in iframeWin) {
+                    if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                        mapObj = iframeWin[key];
+                        break;
+                    }
+                }
+
+                if (mapObj) {
+                    mapObj.eachLayer(layer => {
+                        const tt = (layer.getTooltip && layer.getTooltip()) ? layer.getTooltip().getContent() : "";
+                        if (tt && tt.includes(`ID ${target.id}:`)) {
+                            if (layer.getLatLngs) {
+                                const latlngs = layer.getLatLngs();
+                                const sIdx = Math.floor(latlngs.length * splitRatio);
+                                const pts1 = latlngs.slice(0, sIdx + 1);
+                                const pts2 = latlngs.slice(sIdx);
+
+                                layer.setLatLngs(pts1);
+                                layer.setTooltipContent(tt.replace(`ID ${target.id}`, `ID ${target.id} (P1)`));
+
+                                // Create second path
+                                if (iframeWin.L) {
+                                    const layer2 = iframeWin.L.polyline(pts2, {
+                                        color: layer.options.color,
+                                        weight: layer.options.weight,
+                                        opacity: layer.options.opacity
+                                    });
+                                    layer2.bindTooltip(tt.replace(`ID ${target.id}`, `ID ${newId} (P2)`));
+                                    layer2.addTo(mapObj);
+                                }
+                            }
+                        }
+                    });
+                }
+
+                updateMergeDropdowns();
+                alert(`클러스터가 ${name1}와 ${name2}로 분리되었습니다.`);
+
+            } catch (err) {
+                console.error("Split error:", err);
+                alert("분리 중 오류가 발생했습니다: " + err.message);
+            }
         }
 
         function performMerge() {
