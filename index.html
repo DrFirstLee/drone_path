@@ -308,6 +308,8 @@
 
                 const header = lines[0];
                 const dataLines = lines.slice(1);
+
+                // Use the exact same index calculation for both Map and CSV
                 const splitIndex = Math.max(1, Math.min(dataLines.length - 1, Math.floor(dataLines.length * splitRatio)));
 
                 const part1Lines = dataLines.slice(0, splitIndex);
@@ -319,10 +321,13 @@
                 // Determine name for the shorter one
                 let name1 = target.name;
                 let name2 = target.name;
+                const baseName = target.name.replace('_splitted', '');
                 if (part1Lines.length < part2Lines.length) {
-                    name1 = target.name + "_splitted";
+                    name1 = baseName + "_splitted";
+                    name2 = baseName;
                 } else {
-                    name2 = target.name + "_splitted";
+                    name1 = baseName;
+                    name2 = baseName + "_splitted";
                 }
 
                 // Update UI: Modify original link, add new link
@@ -345,7 +350,7 @@
                 target.linkElement.parentNode.insertBefore(newLink, target.linkElement.nextSibling);
 
                 // Add to internal state
-                const newId = Math.max(...currentClusters.map(c => c.id)) + 1;
+                const newId = Math.max(0, ...currentClusters.map(c => c.id)) + 1;
                 currentClusters.push({
                     name: name2,
                     type: target.type,
@@ -370,22 +375,28 @@
                         if (tt && tt.includes(`ID ${target.id}:`)) {
                             if (layer.getLatLngs) {
                                 const latlngs = layer.getLatLngs();
-                                const sIdx = Math.floor(latlngs.length * splitRatio);
+                                // Ensure index matches CSV split
+                                const sIdx = Math.min(latlngs.length - 1, splitIndex);
                                 const pts1 = latlngs.slice(0, sIdx + 1);
                                 const pts2 = latlngs.slice(sIdx);
 
                                 layer.setLatLngs(pts1);
-                                layer.setTooltipContent(tt.replace(`ID ${target.id}`, `ID ${target.id} (P1)`));
+                                layer.setTooltipContent(`ID ${target.id}: ${name1}`);
+                                layer.off('click'); // Remove old click handler
+                                layer.on('click', (e) => handleMapLineClick(target.id, e.latlng, layer)); // Add new click handler
 
-                                // Create second path
                                 if (iframeWin.L) {
                                     const layer2 = iframeWin.L.polyline(pts2, {
                                         color: layer.options.color,
                                         weight: layer.options.weight,
                                         opacity: layer.options.opacity
                                     });
-                                    layer2.bindTooltip(tt.replace(`ID ${target.id}`, `ID ${newId} (P2)`));
+                                    layer2.bindTooltip(`ID ${newId}: ${name2}`);
                                     layer2.addTo(mapObj);
+
+                                    // Add click handler to new layer
+                                    layer2.on('click', (e) => handleMapLineClick(newId, e.latlng, layer2));
+                                    layer2.setStyle({ cursor: 'pointer' });
                                 }
                             }
                         }
@@ -393,11 +404,61 @@
                 }
 
                 updateMergeDropdowns();
-                alert(`클러스터가 ${name1}와 ${name2}로 분리되었습니다.`);
+                alert(`성공적으로 분리되었습니다.\n1번: ${name1} (${part1Lines.length}행)\n2번: ${name2} (${part2Lines.length}행)`);
 
             } catch (err) {
                 console.error("Split error:", err);
                 alert("분리 중 오류가 발생했습니다: " + err.message);
+            }
+        }
+
+        // --- Map interaction additions ---
+        function setupMapInteractions() {
+            const iframeWin = document.getElementById('resultFrame').contentWindow;
+            let mapObj = null;
+            for (let key in iframeWin) {
+                if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                    mapObj = iframeWin[key];
+                    break;
+                }
+            }
+            if (!mapObj || !iframeWin.L) return;
+
+            mapObj.eachLayer(layer => {
+                if (layer instanceof iframeWin.L.Polyline && !(layer instanceof iframeWin.L.Polygon)) {
+                    const tt = (layer.getTooltip && layer.getTooltip()) ? layer.getTooltip().getContent() : "";
+                    const match = tt.match(/ID (\d+):/);
+                    if (match) {
+                        const clusterId = parseInt(match[1]);
+                        layer.off('click'); // Remove any existing click handlers to prevent duplicates
+                        layer.on('click', (e) => handleMapLineClick(clusterId, e.latlng, layer));
+                        layer.setStyle({ cursor: 'pointer' });
+                    }
+                }
+            });
+        }
+
+        function handleMapLineClick(clusterId, clickLatLng, layer) {
+            const latlngs = layer.getLatLngs();
+            let minDist = Infinity;
+            let splitIdx = 0;
+
+            for (let i = 0; i < latlngs.length; i++) {
+                const dist = clickLatLng.distanceTo(latlngs[i]);
+                if (dist < minDist) {
+                    minDist = dist;
+                    splitIdx = i;
+                }
+            }
+
+            const ratio = (splitIdx / (latlngs.length - 1)) * 100;
+
+            if (confirm(`ID ${clusterId} 클러스터를 이 지점에서 분리하시겠습니까?\n(클릭 지점: 약 ${Math.round(ratio)}%)`)) {
+                const select = document.getElementById('splitSelect');
+                select.value = clusterId;
+                const range = document.getElementById('splitPointRange');
+                range.value = Math.round(ratio);
+                performSplit();
             }
         }
 
@@ -635,8 +696,11 @@
                 resultFrame.srcdoc = htmlContent;
                 resultContainer.style.display = 'block';
 
-                initMergePanel();
-                extractClustersFromPanel();
+                resultFrame.onload = () => {
+                    initMergePanel();
+                    extractClustersFromPanel();
+                    setupMapInteractions();
+                };
 
                 // Scroll to result
                 resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
