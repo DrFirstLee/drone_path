@@ -147,7 +147,7 @@
                     <span style="font-size: 2rem;">📂</span><br>
                     <span id="fileName">클릭하여 CSV 파일 선택 또는 드래그</span>
                 </label>
-                <input type="file" id="csvFile" accept=".csv" />
+                <input type="file" id="csvFile" accept=".csv" multiple />
                 <p style="margin-top: 1rem; color: #6b7280; font-size: 0.9rem; line-height: 1.4;">
                     ※ <strong>주의</strong>: CSV 파일은 반드시 <strong>앞 13개 컬럼의 순서</strong>를 지켜야 합니다.<br>
                     (시간, 경도, 위도, 고도, 롤, 피치, 요, 1x, 1y, 1z, 2x, 2y, 2z)
@@ -862,7 +862,11 @@
         // File selection handler
         fileInput.addEventListener('change', function () {
             if (this.files && this.files.length > 0) {
-                fileNameSpan.textContent = this.files[0].name;
+                if (this.files.length === 1) {
+                    fileNameSpan.textContent = this.files[0].name;
+                } else {
+                    fileNameSpan.textContent = `${this.files.length}개의 파일 선택됨`;
+                }
                 statusDiv.textContent = "";
                 statusDiv.style.color = "inherit";
             }
@@ -888,7 +892,11 @@
 
             if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
                 fileInput.files = e.dataTransfer.files;
-                fileNameSpan.textContent = fileInput.files[0].name;
+                if (fileInput.files.length === 1) {
+                    fileNameSpan.textContent = fileInput.files[0].name;
+                } else {
+                    fileNameSpan.textContent = `${fileInput.files.length}개의 파일 선택됨`;
+                }
             }
         });
 
@@ -899,9 +907,36 @@
                 return;
             }
 
-            const file = fileInput.files[0];
+            // Merge CSV files if multiple are selected
+            let fileToSend;
+            if (fileInput.files.length === 1) {
+                fileToSend = fileInput.files[0];
+            } else {
+                let header = "";
+                let allRows = [];
+                for (let i = 0; i < fileInput.files.length; i++) {
+                    let text = await fileInput.files[i].text();
+                    let lines = text.split(/\r?\n/).filter(line => line.trim() !== "");
+                    if (lines.length > 0) {
+                        if (i === 0) header = lines[0];
+                        // Add data lines (skip first line if it's header)
+                        allRows.push(...lines.slice(1));
+                    }
+                }
+
+                // Sort by the first column (timestamp)
+                allRows.sort((a, b) => {
+                    const valA = a.split(',')[0].trim();
+                    const valB = b.split(',')[0].trim();
+                    return valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' });
+                });
+
+                const mergedContent = header + "\n" + allRows.join("\n");
+                fileToSend = new Blob([mergedContent], { type: 'text/csv' });
+            }
+
             const formData = new FormData();
-            formData.append('file', file);
+            formData.append('file', fileToSend, 'merged_data.csv');
 
             // UI Update: Progress start
             analyzeBtn.disabled = true;
