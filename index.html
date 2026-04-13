@@ -780,59 +780,18 @@
                 }
                 const blob = new Blob([byteArray], { type: 'image/png' });
 
-                // 2. 클러스터 색상 매핑 가져오기 (백엔드 제공 우선)
+                // 2. 백엔드에서 제공한 클러스터 색상 매핑 정보 가져오기
                 let clusterColorMap = {};
                 const mappingEl = iframeDoc.getElementById('vlm_color_mapping');
-                if (mappingEl) {
-                    try {
-                        clusterColorMap = JSON.parse(mappingEl.innerText);
-                        console.log("Using pre-calculated color mapping from backend.");
-                    } catch (e) {
-                        console.warn("Failed to parse backend color mapping:", e);
-                    }
+                if (!mappingEl) {
+                    throw new Error("AI 분석용 매핑 데이터(#vlm_color_mapping)를 찾을 수 없습니다. 분석을 다시 실행해주세요.");
                 }
 
-                // 백엔드 매핑이 없거나 실패한 경우 수동 계산 (Fallback)
-                if (Object.keys(clusterColorMap).length === 0) {
-                    const iframeWin = iframe.contentWindow;
-                    let mapObj = null;
-                    for (let key in iframeWin) {
-                        if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
-                            mapObj = iframeWin[key];
-                            break;
-                        }
-                    }
-
-                    const hexToName = {
-                        '#e6194b': 'red', '#3cb44b': 'green', '#ffe119': 'yellow', '#4363d8': 'blue',
-                        '#f58231': 'orange', '#911eb4': 'purple', '#46f0f0': 'cyan', '#f032e6': 'magenta',
-                        '#bcf60c': 'lime', '#fabebe': 'pink', '#008080': 'teal', '#e6beff': 'lavender',
-                        '#9a6324': 'brown', '#fffac8': 'beige', '#800000': 'maroon', '#aaffc3': 'mint',
-                        '#808000': 'olive', '#ffd8b1': 'apricot', '#000075': 'navy', '#808080': 'grey',
-                        '#ffffff': 'white', '#000000': 'black', '#9400D3': 'darkviolet', '#FF6600': 'vivid_orange'
-                    };
-
-                    if (mapObj) {
-                        mapObj.eachLayer(layer => {
-                            if (layer.options && layer.options.color && layer.getTooltip) {
-                                const tt = layer.getTooltip();
-                                if (tt && tt.getContent()) {
-                                    const match = tt.getContent().match(/ID (\d+):/);
-                                    if (match) {
-                                        const clusterId = match[1];
-                                        const hex = layer.options.color.toLowerCase();
-                                        const colorName = hexToName[hex] || hex;
-                                        if (clusterColorMap[colorName]) {
-                                            if (!clusterColorMap[colorName].includes(`cluster_${clusterId}`))
-                                                clusterColorMap[colorName] += `, cluster_${clusterId}`;
-                                        } else {
-                                            clusterColorMap[colorName] = `cluster_${clusterId}`;
-                                        }
-                                    }
-                                }
-                            }
-                        });
-                    }
+                try {
+                    clusterColorMap = JSON.parse(mappingEl.innerText);
+                    console.log("Using pre-calculated color mapping from backend:", clusterColorMap);
+                } catch (e) {
+                    throw new Error("매핑 데이터 형식이 올바르지 않습니다: " + e.message);
                 }
 
                 // 3. 기존 서버 API로 전송 (기존 형식 그대로: file + context_json)
