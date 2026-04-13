@@ -136,87 +136,6 @@
             }
         }
 
-        /* AI Result Modal */
-        .ai-modal {
-            display: none;
-            position: fixed;
-            z-index: 10000;
-            left: 0;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.7);
-            backdrop-filter: blur(4px);
-            align-items: center;
-            justify-content: center;
-        }
-
-        .ai-modal-content {
-            background-color: white;
-            padding: 2rem;
-            border-radius: 1.5rem;
-            width: 90%;
-            max-width: 800px;
-            max-height: 80vh;
-            overflow-y: auto;
-            position: relative;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-        }
-
-        .ai-modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1.5rem;
-            border-bottom: 1px solid #e5e7eb;
-            padding-bottom: 1rem;
-        }
-
-        .ai-modal-close {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #6b7280;
-            cursor: pointer;
-            transition: color 0.2s;
-        }
-
-        .ai-modal-close:hover {
-            color: #111827;
-        }
-
-        #aiResultText {
-            line-height: 1.6;
-            color: #374151;
-            white-space: pre-wrap;
-            font-size: 1.05rem;
-        }
-
-        .ai-pulse {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            background-color: #8b5cf6;
-            border-radius: 50%;
-            margin-left: 5px;
-            animation: pulse 1.5s infinite;
-        }
-
-        @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7);
-            }
-
-            70% {
-                transform: scale(1);
-                box-shadow: 0 0 0 10px rgba(139, 92, 246, 0);
-            }
-
-            100% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);
-            }
-        }
     </style>
 </head>
 
@@ -258,22 +177,6 @@
         </div>
     </div>
 
-    <!-- AI Result Modal -->
-    <div id="aiModal" class="ai-modal">
-        <div class="ai-modal-content">
-            <div class="ai-modal-header">
-                <h2 style="margin:0; color:#111827; display:flex; align-items:center; gap:10px;">
-                    <span style="font-size:1.5rem;">🤖</span> AI 비행 경로 심층 분석
-                </h2>
-                <span class="ai-modal-close" onclick="closeAiModal()">&times;</span>
-            </div>
-            <div id="aiResultText"></div>
-            <div style="margin-top:2rem; text-align:right;">
-                <button class="button" onclick="closeAiModal()" style="background-color:#6b7280;">닫기</button>
-            </div>
-        </div>
-    </div>
-
     <script>
         const fileInput = document.getElementById('csvFile');
         const fileNameSpan = document.getElementById('fileName');
@@ -308,6 +211,12 @@
                                 <button id="aiAnalyzeBtn" class="button" style="flex: 1; padding: 0.75rem 1rem; background-color: #8b5cf6;">AI 분석</button>
                             </div>
                         </div>
+                    </div>
+                    <div id="aiResultSection" style="border-top: 1px solid #e5e7eb; margin-top: 1rem; padding-top: 1.5rem; display: none;">
+                        <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827; display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size:1.3rem;">🤖</span> AI 분석 결과
+                        </h3>
+                        <div id="aiStaticResultText" style="line-height: 1.6; color: #374151; white-space: pre-wrap; font-size: 1rem; background: #f9fafb; padding: 1.5rem; border-radius: 0.75rem; border: 1px solid #e5e7eb;"></div>
                     </div>
                     <div id="splitSection" style="border-top: 1px solid #e5e7eb; pt-4; margin-top: 1rem; padding-top: 1.5rem;">
                         <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">✂️ 클러스터 분리 (Split)</h3>
@@ -838,9 +747,9 @@
         }
 
         async function performAIAnalyze() {
-            const aiModal = document.getElementById('aiModal');
-            const aiResultText = document.getElementById('aiResultText');
             const aiBtn = document.getElementById('aiAnalyzeBtn');
+            const aiResultSection = document.getElementById('aiResultSection');
+            const aiStaticResultText = document.getElementById('aiStaticResultText');
 
             try {
                 aiBtn.disabled = true;
@@ -866,8 +775,8 @@
                     });
                 }
 
-                aiResultText.innerHTML = "AI가 이미지를 분석하고 있습니다... <span class='ai-pulse'></span>";
-                aiModal.style.display = 'flex';
+                if (aiStaticResultText) aiStaticResultText.innerHTML = "AI가 이미지를 분석하고 있습니다... (잠시만 기다려주세요)";
+                if (aiResultSection) aiResultSection.style.display = 'block';
 
                 // 2. 색상-클러스터 매핑 정보 생성 (VLM 컨텍스트)
                 const hexToName = {
@@ -929,7 +838,7 @@
 
                 if (!response.ok) throw new Error("API 연동 실패");
 
-                aiResultText.innerHTML = ""; // 초기화
+                if (aiStaticResultText) aiStaticResultText.innerHTML = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
 
@@ -937,7 +846,7 @@
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
-                    aiResultText.innerHTML += chunk;
+                    if (aiStaticResultText) aiStaticResultText.innerHTML += chunk;
                 }
 
             } catch (err) {
@@ -949,10 +858,6 @@
             }
         }
 
-        // Close Modal handler
-        function closeAiModal() {
-            document.getElementById('aiModal').style.display = 'none';
-        }
 
         function performMerge() {
             const id1 = parseInt(document.getElementById('mergeSelect1').value);
