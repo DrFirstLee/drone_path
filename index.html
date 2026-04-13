@@ -755,25 +755,100 @@
                 aiBtn.disabled = true;
                 aiBtn.innerHTML = '<span class="loader" style="width:15px; height:15px; margin-right:5px;"></span>캡처 중...';
 
-                // 1. 지도 캡처 (iframe 내부 캡처 시도)
+                // 1. 지도 및 데이터 영역 확인
                 const iframe = document.getElementById('resultFrame');
-                let canvas;
+                const iframeWin = iframe.contentWindow;
+                let mapObj = null;
+                for (let key in iframeWin) {
+                    if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                        mapObj = iframeWin[key];
+                        break;
+                    }
+                }
 
-                try {
-                    // Same-origin인 경우 iframe 내부 직접 캡처 가능
-                    canvas = await html2canvas(iframe.contentDocument.body, {
+                // 캡처 헬퍼 함수
+                const capture = async () => {
+                    // Leaflet 씽크 이슈 해결을 위한 가공 (transform 임시 제거)
+                    const mapPane = iframe.contentDocument.querySelector('.leaflet-map-pane');
+                    const originalTransform = mapPane ? mapPane.style.transform : '';
+                    if (mapPane) mapPane.style.transform = 'none';
+
+                    const canvas = await html2canvas(iframe.contentDocument.body, {
                         useCORS: true,
                         allowTaint: true,
-                        backgroundColor: '#ffffff'
+                        backgroundColor: '#ffffff',
+                        scale: 1.5 // 해상도 향상
                     });
-                } catch (e) {
-                    // 실패 시 컨테이너라도 캡처
-                    console.warn("Iframe capture failed, falling back to container:", e);
-                    canvas = await html2canvas(document.getElementById('resultContainer'), {
-                        useCORS: true,
-                        backgroundColor: '#ffffff'
+
+                    if (mapPane) mapPane.style.transform = originalTransform;
+                    return canvas;
+                };
+
+                // 스크린샷 목록
+                const screenshots = [];
+                
+                // (A) 전체 오버뷰 캡처
+                if (mapObj) {
+                    // 전체 경로가 다 보이도록 fitBounds
+                    let featureGroup = iframeWin.L.featureGroup();
+                    mapObj.eachLayer(layer => {
+                        if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
                     });
+                    if (featureGroup.getLayers().length > 0) {
+                        mapObj.fitBounds(featureGroup.getBounds(), { padding: [20, 20] });
+                        await new Promise(r => setTimeout(r, 600)); // 타일 로딩 대기
+                    }
                 }
+                screenshots.push(await capture());
+
+                // (B) 주요 구간 확대 캡처 (4구역 분할)
+                if (mapObj) {
+                    let featureGroup = iframeWin.L.featureGroup();
+                    mapObj.eachLayer(layer => {
+                        if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
+                    });
+                    
+                    if (featureGroup.getLayers().length > 0) {
+                        const bounds = featureGroup.getBounds();
+                        const center = bounds.getCenter();
+                        const sw = bounds.getSouthWest();
+                        const ne = bounds.getNorthEast();
+                        
+                        // 4개의 관심 지점 (각 사분면 중심)
+                        const detailPoints = [
+                            iframeWin.L.latLng((sw.lat + center.lat) / 2, (sw.lng + center.lng) / 2), // SW
+                            iframeWin.L.latLng((center.lat + ne.lat) / 2, (sw.lng + center.lng) / 2), // NW
+                            iframeWin.L.latLng((sw.lat + center.lat) / 2, (center.lng + ne.lng) / 2), // SE
+                            iframeWin.L.latLng((center.lat + ne.lat) / 2, (center.lng + ne.lng) / 2)  // NE
+                        ];
+
+                        const currentZoom = mapObj.getZoom();
+                        const detailZoom = currentZoom + 1;
+
+                        for (const pt of detailPoints) {
+                            mapObj.setView(pt, detailZoom, { animate: false });
+                            await new Promise(r => setTimeout(r, 500)); // 로딩 및 렌더링 대기
+                            screenshots.push(await capture());
+                        }
+                    }
+                }
+
+                // (C) 이미지 스티칭 (세로로 합치기)
+                const totalWidth = Math.max(...screenshots.map(s => s.width));
+                const totalHeight = screenshots.reduce((sum, s) => sum + s.height, 0);
+                
+                const finalCanvas = document.createElement('canvas');
+                finalCanvas.width = totalWidth;
+                finalCanvas.height = totalHeight;
+                const ctx = finalCanvas.getContext('2d');
+                
+                let currentY = 0;
+                for (const s of screenshots) {
+                    ctx.drawImage(s, 0, currentY);
+                    currentY += s.height;
+                }
+
+                const canvas = finalCanvas; // 후속 로직에서 사용
 
                 if (aiStaticResultText) aiStaticResultText.innerHTML = "AI가 이미지를 분석하고 있습니다... (잠시만 기다려주세요)";
                 if (aiResultSection) aiResultSection.style.display = 'block';
