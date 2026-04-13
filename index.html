@@ -756,10 +756,16 @@
 
             try {
                 aiBtn.disabled = true;
-                aiBtn.innerHTML = '<span class="loader" style="width:15px; height:15px; margin-right:5px;"></span>캡처 중...';
+                aiBtn.innerHTML = '<span class="loader" style="width:15px; height:15px; margin-right:5px;"></span>분석 중...';
 
-                // 1. 지도 및 데이터 영역 확인
+                if (aiStaticResultText) aiStaticResultText.innerHTML = "서버에서 지도를 캡처하고 AI가 분석 중입니다... (잠시만 기다려주세요)";
+                if (aiResultSection) aiResultSection.style.display = 'block';
+
+                // 1. iframe의 HTML 가져오기
                 const iframe = document.getElementById('resultFrame');
+                const htmlContent = iframe.contentDocument.documentElement.outerHTML;
+
+                // 2. 색상-클러스터 매핑 정보 생성
                 const iframeWin = iframe.contentWindow;
                 let mapObj = null;
                 for (let key in iframeWin) {
@@ -769,170 +775,6 @@
                     }
                 }
 
-                // 캡처 헬퍼 함수
-                // 캡처 헬퍼 함수 — transform 문제를 근본적으로 우회
-                const capture = async () => {
-                    const doc = iframe.contentDocument;
-                    const mapContainer = doc.querySelector('.leaflet-container');
-                    const rect = mapContainer.getBoundingClientRect();
-
-                    // 1. 타일 레이어를 Canvas에 그리기
-                    const canvas = document.createElement('canvas');
-                    const scale = 1.5;
-                    canvas.width = rect.width * scale;
-                    canvas.height = rect.height * scale;
-                    const ctx = canvas.getContext('2d');
-                    ctx.scale(scale, scale);
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillRect(0, 0, rect.width, rect.height);
-
-                    // 타일 이미지 그리기
-                    // 타일 이미지 그리기 — CORS 우회
-                    const tiles = doc.querySelectorAll('.leaflet-tile-loaded');
-                    for (const tile of tiles) {
-                        const tileRect = tile.getBoundingClientRect();
-                        const x = tileRect.left - rect.left;
-                        const y = tileRect.top - rect.top;
-                        try {
-                            // tile.src를 fetch로 가져와서 blob URL로 변환
-                            const resp = await window.fetch(tile.src, { mode: 'cors' });
-                            if (!resp.ok) throw new Error('fetch failed');
-                            const blob = await resp.blob();
-                            const blobUrl = URL.createObjectURL(blob);
-                            const img = new Image();
-                            await new Promise((resolve, reject) => {
-                                img.onload = resolve;
-                                img.onerror = reject;
-                                img.src = blobUrl;
-                            });
-                            ctx.drawImage(img, x, y, tileRect.width, tileRect.height);
-                            URL.revokeObjectURL(blobUrl);
-                        } catch (e) {
-                            // CORS 실패 시 — 빈 영역으로 남김 (배경은 이미 흰색)
-                            console.warn('Tile fetch failed:', e);
-                        }
-                    }
-
-                    // 2. SVG (polyline) 그리기
-                    const svgs = doc.querySelectorAll('.leaflet-overlay-pane svg');
-                    for (const svg of svgs) {
-                        const svgRect = svg.getBoundingClientRect();
-                        const x = svgRect.left - rect.left;
-                        const y = svgRect.top - rect.top;
-                        try {
-                            const svgData = new XMLSerializer().serializeToString(svg);
-                            const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-                            const url = URL.createObjectURL(svgBlob);
-                            const img = new Image();
-                            await new Promise((resolve, reject) => {
-                                img.onload = resolve;
-                                img.onerror = reject;
-                                img.src = url;
-                            });
-                            ctx.drawImage(img, x, y, svgRect.width, svgRect.height);
-                            URL.revokeObjectURL(url);
-                        } catch (e) { console.warn('SVG render failed:', e); }
-                    }
-
-                    // 3. DivIcon 마커 (텍스트 라벨) 그리기
-                    const markers = doc.querySelectorAll('.leaflet-marker-pane > *');
-                    for (const marker of markers) {
-                        const markerRect = marker.getBoundingClientRect();
-                        const x = markerRect.left - rect.left;
-                        const y = markerRect.top - rect.top;
-
-                        // 텍스트 내용과 스타일 추출
-                        const text = marker.textContent.trim();
-                        if (!text) continue;
-
-                        const style = iframeWin.getComputedStyle(marker.querySelector('div') || marker);
-                        const color = style.color || '#000000';
-                        const fontSize = parseFloat(style.fontSize) || 11;
-
-                        ctx.font = `bold ${fontSize}px sans-serif`;
-                        ctx.fillStyle = color;
-                        ctx.strokeStyle = 'white';
-                        ctx.lineWidth = 3;
-                        ctx.strokeText(text, x, y + fontSize);
-                        ctx.fillText(text, x, y + fontSize);
-                    }
-
-                    return canvas;
-                };
-
-
-
-                // 스크린샷 목록
-                const screenshots = [];
-
-                // (A) 전체 오버뷰 캡처
-                if (mapObj) {
-                    // 전체 경로가 다 보이도록 fitBounds
-                    let featureGroup = iframeWin.L.featureGroup();
-                    mapObj.eachLayer(layer => {
-                        if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
-                    });
-                    if (featureGroup.getLayers().length > 0) {
-                        mapObj.fitBounds(featureGroup.getBounds(), { padding: [20, 20] });
-                        await new Promise(r => setTimeout(r, 800)); // 타일 로딩 대기
-                    }
-                }
-                screenshots.push(await capture());
-                const canvas = screenshots[0]; // 1장만 사용
-
-                // // (B) 주요 구간 확대 캡처 (4구역 분할)
-                // if (mapObj) {
-                //     let featureGroup = iframeWin.L.featureGroup();
-                //     mapObj.eachLayer(layer => {
-                //         if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
-                //     });
-
-                //     if (featureGroup.getLayers().length > 0) {
-                //         const bounds = featureGroup.getBounds();
-                //         const center = bounds.getCenter();
-                //         const sw = bounds.getSouthWest();
-                //         const ne = bounds.getNorthEast();
-
-                //         // 4개의 관심 지점 (각 사분면 중심)
-                //         const detailPoints = [
-                //             iframeWin.L.latLng((sw.lat + center.lat) / 2, (sw.lng + center.lng) / 2), // SW
-                //             iframeWin.L.latLng((center.lat + ne.lat) / 2, (sw.lng + center.lng) / 2), // NW
-                //             iframeWin.L.latLng((sw.lat + center.lat) / 2, (center.lng + ne.lng) / 2), // SE
-                //             iframeWin.L.latLng((center.lat + ne.lat) / 2, (center.lng + ne.lng) / 2)  // NE
-                //         ];
-
-                //         const currentZoom = mapObj.getZoom();
-                //         const detailZoom = currentZoom + 1;
-
-                //         for (const pt of detailPoints) {
-                //             mapObj.setView(pt, detailZoom, { animate: false });
-                //             await new Promise(r => setTimeout(r, 700)); // 로딩 및 렌더링 대기
-                //             screenshots.push(await capture());
-                //         }
-                //     }
-                // }
-
-                // // (C) 이미지 스티칭 (세로로 합치기)
-                // const totalWidth = Math.max(...screenshots.map(s => s.width));
-                // const totalHeight = screenshots.reduce((sum, s) => sum + s.height, 0);
-
-                // const finalCanvas = document.createElement('canvas');
-                // finalCanvas.width = totalWidth;
-                // finalCanvas.height = totalHeight;
-                // const ctx = finalCanvas.getContext('2d');
-
-                // let currentY = 0;
-                // for (const s of screenshots) {
-                //     ctx.drawImage(s, 0, currentY);
-                //     currentY += s.height;
-                // }
-
-                // const canvas = finalCanvas; // 후속 로직에서 사용
-
-                if (aiStaticResultText) aiStaticResultText.innerHTML = "AI가 이미지를 분석하고 있습니다... (잠시만 기다려주세요)";
-                if (aiResultSection) aiResultSection.style.display = 'block';
-
-                // 2. 색상-클러스터 매핑 정보 생성 (VLM 컨텍스트)
                 const hexToName = {
                     '#e6194b': 'red', '#3cb44b': 'green', '#ffe119': 'yellow', '#4363d8': 'blue',
                     '#f58231': 'orange', '#911eb4': 'purple', '#46f0f0': 'cyan', '#f032e6': 'magenta',
@@ -943,7 +785,6 @@
                 };
 
                 const clusterColorMap = {};
-                // iframeWin과 mapObj는 이미 상단에서 선언됨
                 if (mapObj) {
                     mapObj.eachLayer(layer => {
                         if (layer.options && layer.options.color && layer.getTooltip) {
@@ -954,7 +795,6 @@
                                     const clusterId = match[1];
                                     const hex = layer.options.color.toLowerCase();
                                     const colorName = hexToName[hex] || hex;
-
                                     if (clusterColorMap[colorName]) {
                                         if (!clusterColorMap[colorName].includes(`cluster_${clusterId}`)) {
                                             clusterColorMap[colorName] += `, cluster_${clusterId}`;
@@ -968,16 +808,12 @@
                     });
                 }
 
-                const contextJson = JSON.stringify(clusterColorMap, null, 2);
-
-                // 3. Blob 변환 및 전송
-                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+                // 3. 서버로 전송
                 const formData = new FormData();
-                formData.append('file', blob, 'map_capture.jpg');
-                formData.append('context_json', contextJson);
+                formData.append('html_content', '<!DOCTYPE html>\n<html>' + htmlContent + '</html>');
+                formData.append('context_json', JSON.stringify(clusterColorMap, null, 2));
 
-                // 4. API 호출 (Streaming)
-                const response = await fetch('https://chatbot.naranja.my/drone_analyze_gpt', {
+                const response = await fetch('https://chatbot.naranja.my/drone_capture_map', {
                     method: 'POST',
                     body: formData
                 });
@@ -993,9 +829,7 @@
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
                     fullText += chunk;
-
                     if (aiStaticResultText) {
-                        // **강조** 패턴을 <strong>강조</strong>로 변환하여 HTML 반영
                         const formattedText = fullText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                         aiStaticResultText.innerHTML = formattedText;
                     }
@@ -1009,8 +843,6 @@
                 aiBtn.innerHTML = 'AI 분석';
             }
         }
-
-
         function performMerge() {
             const id1 = parseInt(document.getElementById('mergeSelect1').value);
             const id2 = parseInt(document.getElementById('mergeSelect2').value);
