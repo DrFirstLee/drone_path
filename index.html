@@ -245,6 +245,24 @@
                 ">📖 로직보기</a>
             </div>
             <div id="status"></div>
+            
+            <div id="aiResultSection" style="border-top: 1px solid #e5e7eb; margin-top: 1rem; padding-top: 1.5rem; display: none;">
+                <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827; display: flex; align-items: center; gap: 10px; justify-content: center;">
+                    <span style="font-size:1.3rem;">🤖</span> AI 분석 결과
+                </h3>
+                
+                <!-- Thinking Section -->
+                <div id="aiThinkingContainer" class="thinking-container" style="display: none; text-align: left;">
+                    <div class="thinking-header" onclick="toggleThinking()">
+                        <span><span class="thinking-dot"></span> AI가 경로상 오류를 분석 중입니다...</span>
+                        <span id="thinkingToggleIcon">▼</span>
+                    </div>
+                    <div id="aiThinkingText" class="thinking-content"></div>
+                </div>
+
+                <!-- Final Result Section -->
+                <div id="aiStaticResultText" class="result-conclusion" style="display: none; text-align: left;"></div>
+            </div>
         </div>
 
         <div class="result-container" id="resultContainer">
@@ -281,29 +299,12 @@
                             <span style="font-weight: bold; font-size: 1.5rem; color: #6b7280;">+</span>
                             <select id="mergeSelect2" style="flex: 1; padding: 0.75rem; font-size: 1rem; border-radius: 0.5rem; border: 1px solid #d1d5db; min-width: 150px;"></select>
                             
-                            <div style="flex: 1; display: flex; gap: 8px; min-width: 300px;">
+                            <div style="flex: 1; display: flex; gap: 8px; min-width: 150px;">
                                 <button id="mergeBtn" class="button" style="flex: 1; padding: 0.75rem 1rem;">병합하기</button>
-                                <button id="aiAnalyzeBtn" class="button" style="flex: 1; padding: 0.75rem 1rem; background-color: #8b5cf6;">AI 분석</button>
                             </div>
                         </div>
                     </div>
-                    <div id="aiResultSection" style="border-top: 1px solid #e5e7eb; margin-top: 1rem; padding-top: 1.5rem; display: none;">
-                        <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827; display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size:1.3rem;">🤖</span> AI 분석 결과
-                        </h3>
-                        
-                        <!-- Thinking Section -->
-                        <div id="aiThinkingContainer" class="thinking-container" style="display: none;">
-                            <div class="thinking-header" onclick="toggleThinking()">
-                                <span><span class="thinking-dot"></span> AI가 경로상 오류를 분석 중입니다...</span>
-                                <span id="thinkingToggleIcon">▼</span>
-                            </div>
-                            <div id="aiThinkingText" class="thinking-content"></div>
-                        </div>
 
-                        <!-- Final Result Section -->
-                        <div id="aiStaticResultText" class="result-conclusion" style="display: none;"></div>
-                    </div>
                     <div id="splitSection" style="border-top: 1px solid #e5e7eb; pt-4; margin-top: 1rem; padding-top: 1.5rem;">
                         <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">✂️ 클러스터 분리 (Split)</h3>
                         <div style="display: flex; gap: 1rem; align-items: center; flex-wrap: wrap;">
@@ -327,7 +328,6 @@
                 resultContainer.parentNode.insertBefore(mergePanel, resultContainer.nextSibling);
 
                 document.getElementById('mergeBtn').addEventListener('click', performMerge);
-                document.getElementById('aiAnalyzeBtn').addEventListener('click', performAIAnalyze);
                 document.getElementById('splitBtn').addEventListener('click', performSplit);
                 document.getElementById('renameBtn').addEventListener('click', performRename);
 
@@ -836,18 +836,20 @@
             }
         }
 
-        async function performAIAnalyze() {
-            const aiBtn = document.getElementById('aiAnalyzeBtn');
             const aiResultSection = document.getElementById('aiResultSection');
             const aiStaticResultText = document.getElementById('aiStaticResultText');
             const aiThinkingContainer = document.getElementById('aiThinkingContainer');
             const aiThinkingText = document.getElementById('aiThinkingText');
 
             try {
-                aiBtn.disabled = true;
-                aiBtn.innerHTML = '<span class="loader" style="width:15px; height:15px; margin-right:5px;"></span>분석 중...';
-                if (aiStaticResultText) aiStaticResultText.innerHTML = "AI가 분석 중입니다... (잠시만 기다려주세요)";
-                if (aiResultSection) aiResultSection.style.display = 'block';
+                if (aiStaticResultText) {
+                    aiStaticResultText.innerHTML = "AI가 분석 중입니다... (잠시만 기다려주세요)";
+                    aiStaticResultText.style.display = 'block';
+                }
+                if (aiResultSection) {
+                    aiResultSection.style.display = 'block';
+                    aiResultSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
 
                 // 1. iframe 안의 Simplified View 이미지에서 base64 추출
                 const iframe = document.getElementById('resultFrame');
@@ -968,8 +970,7 @@
                 console.error("AI Analyze error:", err);
                 if (aiStaticResultText) aiStaticResultText.innerHTML = "분석 중 오류가 발생했습니다: " + err.message;
             } finally {
-                aiBtn.disabled = false;
-                aiBtn.innerHTML = 'AI 분석';
+                // No button to re-enable
             }
         }
 
@@ -1249,6 +1250,11 @@
                     initMergePanel();
                     extractClustersFromPanel();
                     setupMapInteractions();
+                    
+                    // Automatically trigger AI analysis
+                    setTimeout(() => {
+                        performAIAnalyze();
+                    }, 500);
                 };
 
                 // Scroll to result
