@@ -770,40 +770,42 @@
                 }
 
                 // 캡처 헬퍼 함수
+                // 캡처 헬퍼 함수 — transform 문제를 근본적으로 우회
                 const capture = async () => {
                     const doc = iframe.contentDocument;
-                    const panes = doc.querySelectorAll('.leaflet-pane');
+
+                    // Leaflet이 내부적으로 transform을 리셋하도록 강제
+                    // _resetView는 모든 pane의 transform을 재계산함
+                    if (mapObj._resetView) {
+                        mapObj._resetView(mapObj.getCenter(), mapObj.getZoom(), true);
+                    }
+                    await new Promise(r => setTimeout(r, 200));
+
+                    // 이제 모든 pane의 transform이 깨끗한 상태
+                    // map-pane만 flatten (자식은 상대좌표이므로 건드리지 않음)  
                     const originalStyles = [];
-
-                    // 1. Leaflet의 CSS transform(translate3d)을 html2canvas가 오해하지 않도록 left/top으로 변환
-                    panes.forEach(pane => {
-                        const style = iframeWin.getComputedStyle(pane);
-                        const transform = style.transform;
-
+                    const mapPane = doc.querySelector('.leaflet-map-pane');
+                    if (mapPane) {
+                        const computed = iframeWin.getComputedStyle(mapPane);
+                        const transform = computed.transform;
                         if (transform && transform !== 'none') {
                             try {
                                 const matrix = new DOMMatrix(transform);
                                 originalStyles.push({
-                                    pane: pane,
-                                    transform: pane.style.transform,
-                                    left: pane.style.left,
-                                    top: pane.style.top
+                                    el: mapPane,
+                                    transform: mapPane.style.transform,
+                                    left: mapPane.style.left,
+                                    top: mapPane.style.top
                                 });
-
-                                // transform의 x, y 값을 기존 left, top에 더함
-                                const currentLeft = parseFloat(pane.style.left) || 0;
-                                const currentTop = parseFloat(pane.style.top) || 0;
-
-                                pane.style.transform = 'none';
-                                pane.style.left = (currentLeft + matrix.m41) + 'px';
-                                pane.style.top = (currentTop + matrix.m42) + 'px';
-                            } catch (e) {
-                                console.warn("Transform conversion failed for pane:", pane, e);
-                            }
+                                const curLeft = parseFloat(mapPane.style.left) || 0;
+                                const curTop = parseFloat(mapPane.style.top) || 0;
+                                mapPane.style.transform = 'none';
+                                mapPane.style.left = (curLeft + matrix.m41) + 'px';
+                                mapPane.style.top = (curTop + matrix.m42) + 'px';
+                            } catch (e) { }
                         }
-                    });
+                    }
 
-                    // 2. 스크린샷 캡처
                     const canvas = await html2canvas(doc.body, {
                         useCORS: true,
                         allowTaint: true,
@@ -812,16 +814,14 @@
                         logging: false
                     });
 
-                    // 3. 스타일 원상 복구
                     originalStyles.forEach(s => {
-                        s.pane.style.transform = s.transform;
-                        s.pane.style.left = s.left;
-                        s.pane.style.top = s.top;
+                        s.el.style.transform = s.transform;
+                        s.el.style.left = s.left;
+                        s.el.style.top = s.top;
                     });
 
                     return canvas;
                 };
-
                 // 스크린샷 목록
                 const screenshots = [];
 
@@ -838,55 +838,56 @@
                     }
                 }
                 screenshots.push(await capture());
+                const canvas = screenshots[0]; // 1장만 사용
 
-                // (B) 주요 구간 확대 캡처 (4구역 분할)
-                if (mapObj) {
-                    let featureGroup = iframeWin.L.featureGroup();
-                    mapObj.eachLayer(layer => {
-                        if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
-                    });
+                // // (B) 주요 구간 확대 캡처 (4구역 분할)
+                // if (mapObj) {
+                //     let featureGroup = iframeWin.L.featureGroup();
+                //     mapObj.eachLayer(layer => {
+                //         if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
+                //     });
 
-                    if (featureGroup.getLayers().length > 0) {
-                        const bounds = featureGroup.getBounds();
-                        const center = bounds.getCenter();
-                        const sw = bounds.getSouthWest();
-                        const ne = bounds.getNorthEast();
+                //     if (featureGroup.getLayers().length > 0) {
+                //         const bounds = featureGroup.getBounds();
+                //         const center = bounds.getCenter();
+                //         const sw = bounds.getSouthWest();
+                //         const ne = bounds.getNorthEast();
 
-                        // 4개의 관심 지점 (각 사분면 중심)
-                        const detailPoints = [
-                            iframeWin.L.latLng((sw.lat + center.lat) / 2, (sw.lng + center.lng) / 2), // SW
-                            iframeWin.L.latLng((center.lat + ne.lat) / 2, (sw.lng + center.lng) / 2), // NW
-                            iframeWin.L.latLng((sw.lat + center.lat) / 2, (center.lng + ne.lng) / 2), // SE
-                            iframeWin.L.latLng((center.lat + ne.lat) / 2, (center.lng + ne.lng) / 2)  // NE
-                        ];
+                //         // 4개의 관심 지점 (각 사분면 중심)
+                //         const detailPoints = [
+                //             iframeWin.L.latLng((sw.lat + center.lat) / 2, (sw.lng + center.lng) / 2), // SW
+                //             iframeWin.L.latLng((center.lat + ne.lat) / 2, (sw.lng + center.lng) / 2), // NW
+                //             iframeWin.L.latLng((sw.lat + center.lat) / 2, (center.lng + ne.lng) / 2), // SE
+                //             iframeWin.L.latLng((center.lat + ne.lat) / 2, (center.lng + ne.lng) / 2)  // NE
+                //         ];
 
-                        const currentZoom = mapObj.getZoom();
-                        const detailZoom = currentZoom + 1;
+                //         const currentZoom = mapObj.getZoom();
+                //         const detailZoom = currentZoom + 1;
 
-                        for (const pt of detailPoints) {
-                            mapObj.setView(pt, detailZoom, { animate: false });
-                            await new Promise(r => setTimeout(r, 700)); // 로딩 및 렌더링 대기
-                            screenshots.push(await capture());
-                        }
-                    }
-                }
+                //         for (const pt of detailPoints) {
+                //             mapObj.setView(pt, detailZoom, { animate: false });
+                //             await new Promise(r => setTimeout(r, 700)); // 로딩 및 렌더링 대기
+                //             screenshots.push(await capture());
+                //         }
+                //     }
+                // }
 
-                // (C) 이미지 스티칭 (세로로 합치기)
-                const totalWidth = Math.max(...screenshots.map(s => s.width));
-                const totalHeight = screenshots.reduce((sum, s) => sum + s.height, 0);
+                // // (C) 이미지 스티칭 (세로로 합치기)
+                // const totalWidth = Math.max(...screenshots.map(s => s.width));
+                // const totalHeight = screenshots.reduce((sum, s) => sum + s.height, 0);
 
-                const finalCanvas = document.createElement('canvas');
-                finalCanvas.width = totalWidth;
-                finalCanvas.height = totalHeight;
-                const ctx = finalCanvas.getContext('2d');
+                // const finalCanvas = document.createElement('canvas');
+                // finalCanvas.width = totalWidth;
+                // finalCanvas.height = totalHeight;
+                // const ctx = finalCanvas.getContext('2d');
 
-                let currentY = 0;
-                for (const s of screenshots) {
-                    ctx.drawImage(s, 0, currentY);
-                    currentY += s.height;
-                }
+                // let currentY = 0;
+                // for (const s of screenshots) {
+                //     ctx.drawImage(s, 0, currentY);
+                //     currentY += s.height;
+                // }
 
-                const canvas = finalCanvas; // 후속 로직에서 사용
+                // const canvas = finalCanvas; // 후속 로직에서 사용
 
                 if (aiStaticResultText) aiStaticResultText.innerHTML = "AI가 이미지를 분석하고 있습니다... (잠시만 기다려주세요)";
                 if (aiResultSection) aiResultSection.style.display = 'block';
