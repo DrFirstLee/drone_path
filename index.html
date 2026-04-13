@@ -773,55 +773,79 @@
                 // 캡처 헬퍼 함수 — transform 문제를 근본적으로 우회
                 const capture = async () => {
                     const doc = iframe.contentDocument;
+                    const mapContainer = doc.querySelector('.leaflet-container');
+                    const rect = mapContainer.getBoundingClientRect();
 
-                    // Leaflet이 내부적으로 transform을 리셋하도록 강제
-                    // _resetView는 모든 pane의 transform을 재계산함
-                    if (mapObj._resetView) {
-                        mapObj._resetView(mapObj.getCenter(), mapObj.getZoom(), true);
-                    }
-                    await new Promise(r => setTimeout(r, 200));
+                    // 1. 타일 레이어를 Canvas에 그리기
+                    const canvas = document.createElement('canvas');
+                    const scale = 1.5;
+                    canvas.width = rect.width * scale;
+                    canvas.height = rect.height * scale;
+                    const ctx = canvas.getContext('2d');
+                    ctx.scale(scale, scale);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillRect(0, 0, rect.width, rect.height);
 
-                    // 이제 모든 pane의 transform이 깨끗한 상태
-                    // map-pane만 flatten (자식은 상대좌표이므로 건드리지 않음)  
-                    const originalStyles = [];
-                    const mapPane = doc.querySelector('.leaflet-map-pane');
-                    if (mapPane) {
-                        const computed = iframeWin.getComputedStyle(mapPane);
-                        const transform = computed.transform;
-                        if (transform && transform !== 'none') {
-                            try {
-                                const matrix = new DOMMatrix(transform);
-                                originalStyles.push({
-                                    el: mapPane,
-                                    transform: mapPane.style.transform,
-                                    left: mapPane.style.left,
-                                    top: mapPane.style.top
-                                });
-                                const curLeft = parseFloat(mapPane.style.left) || 0;
-                                const curTop = parseFloat(mapPane.style.top) || 0;
-                                mapPane.style.transform = 'none';
-                                mapPane.style.left = (curLeft + matrix.m41) + 'px';
-                                mapPane.style.top = (curTop + matrix.m42) + 'px';
-                            } catch (e) { }
-                        }
+                    // 타일 이미지 그리기
+                    const tiles = doc.querySelectorAll('.leaflet-tile-loaded');
+                    for (const tile of tiles) {
+                        const tileRect = tile.getBoundingClientRect();
+                        const x = tileRect.left - rect.left;
+                        const y = tileRect.top - rect.top;
+                        try {
+                            ctx.drawImage(tile, x, y, tileRect.width, tileRect.height);
+                        } catch (e) { /* CORS 타일 무시 */ }
                     }
 
-                    const canvas = await html2canvas(doc.body, {
-                        useCORS: true,
-                        allowTaint: true,
-                        backgroundColor: '#ffffff',
-                        scale: 1.5,
-                        logging: false
-                    });
+                    // 2. SVG (polyline) 그리기
+                    const svgs = doc.querySelectorAll('.leaflet-overlay-pane svg');
+                    for (const svg of svgs) {
+                        const svgRect = svg.getBoundingClientRect();
+                        const x = svgRect.left - rect.left;
+                        const y = svgRect.top - rect.top;
+                        try {
+                            const svgData = new XMLSerializer().serializeToString(svg);
+                            const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+                            const url = URL.createObjectURL(svgBlob);
+                            const img = new Image();
+                            await new Promise((resolve, reject) => {
+                                img.onload = resolve;
+                                img.onerror = reject;
+                                img.src = url;
+                            });
+                            ctx.drawImage(img, x, y, svgRect.width, svgRect.height);
+                            URL.revokeObjectURL(url);
+                        } catch (e) { console.warn('SVG render failed:', e); }
+                    }
 
-                    originalStyles.forEach(s => {
-                        s.el.style.transform = s.transform;
-                        s.el.style.left = s.left;
-                        s.el.style.top = s.top;
-                    });
+                    // 3. DivIcon 마커 (텍스트 라벨) 그리기
+                    const markers = doc.querySelectorAll('.leaflet-marker-pane > *');
+                    for (const marker of markers) {
+                        const markerRect = marker.getBoundingClientRect();
+                        const x = markerRect.left - rect.left;
+                        const y = markerRect.top - rect.top;
+
+                        // 텍스트 내용과 스타일 추출
+                        const text = marker.textContent.trim();
+                        if (!text) continue;
+
+                        const style = iframeWin.getComputedStyle(marker.querySelector('div') || marker);
+                        const color = style.color || '#000000';
+                        const fontSize = parseFloat(style.fontSize) || 11;
+
+                        ctx.font = `bold ${fontSize}px sans-serif`;
+                        ctx.fillStyle = color;
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 3;
+                        ctx.strokeText(text, x, y + fontSize);
+                        ctx.fillText(text, x, y + fontSize);
+                    }
 
                     return canvas;
                 };
+
+
+
                 // 스크린샷 목록
                 const screenshots = [];
 
