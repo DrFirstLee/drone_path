@@ -772,33 +772,38 @@
                 // 캡처 헬퍼 함수
                 const capture = async () => {
                     const doc = iframe.contentDocument;
+                    const panes = doc.querySelectorAll('.leaflet-pane');
                     const originalStyles = [];
 
-                    // 핵심: leaflet-map-pane만 flatten (자식 pane은 상대좌표이므로 건드리지 않음)
-                    const mapPane = doc.querySelector('.leaflet-map-pane');
-                    if (mapPane) {
-                        const style = iframeWin.getComputedStyle(mapPane);
+                    // 1. Leaflet의 CSS transform(translate3d)을 html2canvas가 오해하지 않도록 left/top으로 변환
+                    panes.forEach(pane => {
+                        const style = iframeWin.getComputedStyle(pane);
                         const transform = style.transform;
+
                         if (transform && transform !== 'none') {
                             try {
                                 const matrix = new DOMMatrix(transform);
                                 originalStyles.push({
-                                    el: mapPane,
-                                    transform: mapPane.style.transform,
-                                    left: mapPane.style.left,
-                                    top: mapPane.style.top
+                                    pane: pane,
+                                    transform: pane.style.transform,
+                                    left: pane.style.left,
+                                    top: pane.style.top
                                 });
-                                const currentLeft = parseFloat(mapPane.style.left) || 0;
-                                const currentTop = parseFloat(mapPane.style.top) || 0;
-                                mapPane.style.transform = 'none';
-                                mapPane.style.left = (currentLeft + matrix.m41) + 'px';
-                                mapPane.style.top = (currentTop + matrix.m42) + 'px';
+
+                                // transform의 x, y 값을 기존 left, top에 더함
+                                const currentLeft = parseFloat(pane.style.left) || 0;
+                                const currentTop = parseFloat(pane.style.top) || 0;
+
+                                pane.style.transform = 'none';
+                                pane.style.left = (currentLeft + matrix.m41) + 'px';
+                                pane.style.top = (currentTop + matrix.m42) + 'px';
                             } catch (e) {
-                                console.warn("Map pane transform conversion failed:", e);
+                                console.warn("Transform conversion failed for pane:", pane, e);
                             }
                         }
-                    }
+                    });
 
+                    // 2. 스크린샷 캡처
                     const canvas = await html2canvas(doc.body, {
                         useCORS: true,
                         allowTaint: true,
@@ -807,15 +812,16 @@
                         logging: false
                     });
 
-                    // 복구
+                    // 3. 스타일 원상 복구
                     originalStyles.forEach(s => {
-                        s.el.style.transform = s.transform;
-                        s.el.style.left = s.left;
-                        s.el.style.top = s.top;
+                        s.pane.style.transform = s.transform;
+                        s.pane.style.left = s.left;
+                        s.pane.style.top = s.top;
                     });
 
                     return canvas;
                 };
+
                 // 스크린샷 목록
                 const screenshots = [];
 
