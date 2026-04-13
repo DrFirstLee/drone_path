@@ -858,12 +858,59 @@
                 aiResultText.innerHTML = "AI가 이미지를 분석하고 있습니다... <span class='ai-pulse'></span>";
                 aiModal.style.display = 'flex';
 
-                // 2. Blob 변환
+                // 2. 색상-클러스터 매핑 정보 생성 (VLM 컨텍스트)
+                const hexToName = {
+                    '#e6194b': 'red', '#3cb44b': 'green', '#ffe119': 'yellow', '#4363d8': 'blue', 
+                    '#f58231': 'orange', '#911eb4': 'purple', '#46f0f0': 'cyan', '#f032e6': 'magenta', 
+                    '#bcf60c': 'lime', '#fabebe': 'pink', '#008080': 'teal', '#e6beff': 'lavender', 
+                    '#9a6324': 'brown', '#fffac8': 'beige', '#800000': 'maroon', '#aaffc3': 'mint', 
+                    '#808000': 'olive', '#ffd8b1': 'apricot', '#000075': 'navy', '#808080': 'grey', 
+                    '#ffffff': 'white', '#000000': 'black', '#9400D3': 'darkviolet', '#FF6600': 'vivid_orange'
+                };
+
+                const clusterColorMap = {};
+                const iframeWin = iframe.contentWindow;
+                let mapObj = null;
+                for (let key in iframeWin) {
+                    if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
+                        mapObj = iframeWin[key];
+                        break;
+                    }
+                }
+
+                if (mapObj) {
+                    mapObj.eachLayer(layer => {
+                        if (layer.options && layer.options.color && layer.getTooltip) {
+                            const tt = layer.getTooltip();
+                            if (tt && tt.getContent()) {
+                                const match = tt.getContent().match(/ID (\d+):/);
+                                if (match) {
+                                    const clusterId = match[1];
+                                    const hex = layer.options.color.toLowerCase();
+                                    const colorName = hexToName[hex] || hex;
+                                    
+                                    if (clusterColorMap[colorName]) {
+                                        if (!clusterColorMap[colorName].includes(`cluster_${clusterId}`)) {
+                                            clusterColorMap[colorName] += `, cluster_${clusterId}`;
+                                        }
+                                    } else {
+                                        clusterColorMap[colorName] = `cluster_${clusterId}`;
+                                    }
+                                }
+                            }
+                        }
+                    });
+                }
+
+                const contextJson = JSON.stringify(clusterColorMap, null, 2);
+
+                // 3. Blob 변환 및 전송
                 const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
                 const formData = new FormData();
                 formData.append('file', blob, 'map_capture.jpg');
+                formData.append('context_json', contextJson);
 
-                // 3. API 호출 (Streaming)
+                // 4. API 호출 (Streaming)
                 const response = await fetch('https://swift-api.naranja.my/drone_analyze_gpt', {
                     method: 'POST',
                     body: formData
