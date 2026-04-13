@@ -171,7 +171,8 @@
             overflow-y: auto;
             border-top: 1px solid #e2e8f0;
             white-space: pre-wrap;
-            display: block; /* Visible by default during streaming */
+            display: block;
+            /* Visible by default during streaming */
         }
 
         .thinking-dot {
@@ -185,8 +186,17 @@
         }
 
         @keyframes pulse {
-            0%, 100% { transform: scale(0.8); opacity: 0.5; }
-            50% { transform: scale(1.2); opacity: 1; }
+
+            0%,
+            100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: scale(1.2);
+                opacity: 1;
+            }
         }
 
         .result-conclusion {
@@ -196,6 +206,10 @@
             border-radius: 1rem;
             margin-top: 1rem;
             box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.1);
+            white-space: pre-wrap;
+            line-height: 1.6;
+            color: #1f2937;
+            font-size: 1rem;
         }
     </style>
 </head>
@@ -275,7 +289,7 @@
                     </div>
                     <div id="aiResultSection" style="border-top: 1px solid #e5e7eb; margin-top: 1rem; padding-top: 1.5rem; display: none;">
                         <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827; display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size:1.3rem;">🤖</span> AI 위성 분석 결과
+                            <span style="font-size:1.3rem;">🤖</span> AI 분석 결과
                         </h3>
                         
                         <!-- Thinking Section -->
@@ -886,12 +900,12 @@
                     aiStaticResultText.innerHTML = "";
                     aiStaticResultText.style.display = 'none';
                 }
-                
+
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let fullText = "";
                 let currentMode = "THINKING"; // Default to thinking
-                
+
                 if (aiThinkingContainer) aiThinkingContainer.style.display = 'block';
 
                 while (true) {
@@ -899,7 +913,7 @@
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
                     fullText += chunk;
-                    
+
                     // Mode Switching Logic
                     if (fullText.includes("[THINKING]")) {
                         currentMode = "THINKING";
@@ -915,13 +929,13 @@
 
                     // Render content based on mode
                     const parts = fullText.split(/\[THINKING\]|\[\/THINKING\]|\[RESULT\]/);
-                    
+
                     // parts[1] is thinking (usually)
                     // parts[2] is result (usually)
-                    
+
                     let thinkingContent = "";
                     let resultContent = "";
-                    
+
                     // Advanced parsing to handle streaming markers
                     let tempText = fullText;
                     if (tempText.includes("[THINKING]")) {
@@ -946,7 +960,7 @@
                         aiStaticResultText.innerHTML = resultContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                     }
                 }
-                
+
                 // After streaming finishes, collapse thinking if you want
                 // toggleThinking(false);
 
@@ -1262,9 +1276,9 @@
             const content = document.getElementById('aiThinkingText');
             const icon = document.getElementById('thinkingToggleIcon');
             if (!content) return;
-            
+
             const isVisible = forceState !== undefined ? !forceState : (content.style.display === 'none');
-            
+
             if (isVisible) {
                 content.style.display = 'block';
                 icon.textContent = '▼';
