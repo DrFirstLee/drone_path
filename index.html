@@ -757,15 +757,30 @@
             try {
                 aiBtn.disabled = true;
                 aiBtn.innerHTML = '<span class="loader" style="width:15px; height:15px; margin-right:5px;"></span>분석 중...';
-
-                if (aiStaticResultText) aiStaticResultText.innerHTML = "서버에서 지도를 캡처하고 AI가 분석 중입니다... (잠시만 기다려주세요)";
+                if (aiStaticResultText) aiStaticResultText.innerHTML = "AI가 분석 중입니다... (잠시만 기다려주세요)";
                 if (aiResultSection) aiResultSection.style.display = 'block';
 
-                // 1. iframe의 HTML 가져오기
+                // 1. iframe 안의 Simplified View 이미지에서 base64 추출
                 const iframe = document.getElementById('resultFrame');
-                const htmlContent = iframe.contentDocument.documentElement.outerHTML;
+                const iframeDoc = iframe.contentDocument;
+                const simplifiedImg = iframeDoc.querySelector('img[src^="data:image/png;base64,"]');
 
-                // 2. 색상-클러스터 매핑 정보 생성
+                if (!simplifiedImg) {
+                    throw new Error("단순화 이미지를 찾을 수 없습니다. 분석을 먼저 실행해주세요.");
+                }
+
+                const dataUrl = simplifiedImg.src; // "data:image/png;base64,..."
+                const base64Data = dataUrl.split(',')[1];
+
+                // base64 → Blob 변환
+                const byteChars = atob(base64Data);
+                const byteArray = new Uint8Array(byteChars.length);
+                for (let i = 0; i < byteChars.length; i++) {
+                    byteArray[i] = byteChars.charCodeAt(i);
+                }
+                const blob = new Blob([byteArray], { type: 'image/png' });
+
+                // 2. 클러스터 색상 매핑 생성
                 const iframeWin = iframe.contentWindow;
                 let mapObj = null;
                 for (let key in iframeWin) {
@@ -783,7 +798,6 @@
                     '#808000': 'olive', '#ffd8b1': 'apricot', '#000075': 'navy', '#808080': 'grey',
                     '#ffffff': 'white', '#000000': 'black', '#9400D3': 'darkviolet', '#FF6600': 'vivid_orange'
                 };
-
                 const clusterColorMap = {};
                 if (mapObj) {
                     mapObj.eachLayer(layer => {
@@ -796,9 +810,8 @@
                                     const hex = layer.options.color.toLowerCase();
                                     const colorName = hexToName[hex] || hex;
                                     if (clusterColorMap[colorName]) {
-                                        if (!clusterColorMap[colorName].includes(`cluster_${clusterId}`)) {
+                                        if (!clusterColorMap[colorName].includes(`cluster_${clusterId}`))
                                             clusterColorMap[colorName] += `, cluster_${clusterId}`;
-                                        }
                                     } else {
                                         clusterColorMap[colorName] = `cluster_${clusterId}`;
                                     }
@@ -808,18 +821,18 @@
                     });
                 }
 
-                // 3. 서버로 전송
+                // 3. 기존 서버 API로 전송 (기존 형식 그대로: file + context_json)
                 const formData = new FormData();
-                formData.append('html_content', '<!DOCTYPE html>\n<html>' + htmlContent + '</html>');
+                formData.append('file', blob, 'simplified_map.png');
                 formData.append('context_json', JSON.stringify(clusterColorMap, null, 2));
 
-                const response = await fetch('https://chatbot.naranja.my/drone_capture_map', {
+                const response = await fetch('https://chatbot.naranja.my/drone_analyze_gpt', {
                     method: 'POST',
                     body: formData
                 });
-
                 if (!response.ok) throw new Error("API 연동 실패");
 
+                // 4. 스트리밍 응답 처리
                 if (aiStaticResultText) aiStaticResultText.innerHTML = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -830,8 +843,7 @@
                     const chunk = decoder.decode(value, { stream: true });
                     fullText += chunk;
                     if (aiStaticResultText) {
-                        const formattedText = fullText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                        aiStaticResultText.innerHTML = formattedText;
+                        aiStaticResultText.innerHTML = fullText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                     }
                 }
 
@@ -843,6 +855,10 @@
                 aiBtn.innerHTML = 'AI 분석';
             }
         }
+
+
+
+
         function performMerge() {
             const id1 = parseInt(document.getElementById('mergeSelect1').value);
             const id2 = parseInt(document.getElementById('mergeSelect2').value);

@@ -548,20 +548,71 @@ async def drone_analyze(file: UploadFile = File(...)):
                 with open(output_file, 'r', encoding='utf-8') as f:
                     html_content = f.read()
 
-                # HTML에 Download Panel 추가
-                if csv_links:
-                    download_panel = f"""
-                    <div style="position: fixed; top: 10px; right: 10px; width: 250px; max-height: 80vh; overflow-y: auto; 
-                                background-color: white; padding: 10px; border: 2px solid #ccc; z-index: 9999; box-shadow: 0 0 10px rgba(0,0,0,0.2);">
-                        <h4>Segment CSV Downloads</h4>
-                        {''.join(csv_links)}
+                # --- 8. [새 기능] Matplotlib을 이용한 단순화된 시각화 이미지 생성 ---
+                try:
+                    plt.figure(figsize=(12, 8))
+                    plt.style.use('default')
+                    
+                    # 배경 경로
+                    plt.plot(df['Longitude'], df['Latitude'], color='#cccccc', linewidth=1, alpha=0.5, label="Original Path")
+                    
+                    # 각 세그먼트별 플로팅
+                    for seg_id in sorted_seg_ids:
+                        group = df[df['Final_Segment_ID'] == seg_id]
+                        seg_state_final = group['State_Final'].iloc[0] if 'State_Final' in group.columns else group['State_Smooth'].iloc[0]
+
+                        # 색상 및 스타일 설정
+                        if seg_state_final == 0:
+                            c = colors[(seg_id - 1) % len(colors)]
+                            lw, ls = 2, '-'
+                        elif seg_state_final == 1:
+                            c = colors[(seg_id - 1) % len(colors)]
+                            lw, ls = 3, '--'
+                        elif seg_state_final == 2:
+                            c, lw, ls = '#9400D3', 3, ':'
+                        else:
+                            c, lw, ls = '#FF6600', 3, '-.'
+
+                        # 불연속 구간 처리
+                        indices = group.index.values
+                        if len(indices) > 0:
+                            idx_diff = np.diff(indices)
+                            split_locs = np.where(idx_diff > 1)[0] + 1
+                            sub_groups_indices = np.split(indices, split_locs)
+
+                            for sub_indices in sub_groups_indices:
+                                if len(sub_indices) < 2: continue
+                                sub_group = df.loc[sub_indices]
+                                plt.plot(sub_group['Longitude'], sub_group['Latitude'], color=c, linewidth=lw, linestyle=ls)
+
+                    plt.axis('off')
+                    plt.tight_layout()
+                    
+                    # 이미지를 base64로 변환
+                    buf = io.BytesIO()
+                    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                    buf.seek(0)
+                    img_base64 = base64.b64encode(buf.read()).decode('utf-8')
+                    plt.close()
+                    
+                    # HTML 상단에 이미지 추가 (AI 분석용 데이터 소스로 활용)
+                    img_html = f"""
+                    <div id="vlm_simplified_container" style="position: fixed; bottom: 10px; right: 10px; width: 400px; 
+                                background-color: rgba(255,255,255,0.9); padding: 5px; border: 1px solid #ccc; z-index: 10000; box-shadow: 0 0 5px rgba(0,0,0,0.1);">
+                        <h5 style="margin:5px 0;">Simplified View (VLM Optimized)</h5>
+                        <img id="vlm_simplified_img" src="data:image/png;base64,{img_base64}" style="width:100%; height:auto;" />
+                        <div style="font-size: 8pt; color: #666; margin-top: 5px;">
+                            Solid: Line | Dash: Rotate | Blue Dot: Rotate_Line | Orange Dash-Dot: Error
+                        </div>
                     </div>
                     """
-                    # Insert before </body>
                     if "</body>" in html_content:
-                        html_content = html_content.replace("</body>", f"{download_panel}</body>")
+                        html_content = html_content.replace("</body>", f"{img_html}</body>")
                     else:
-                        html_content += download_panel
+                        html_content += img_html
+                        
+                except Exception as plt_e:
+                    print(f"Matplotlib plotting error: {plt_e}")
 
                 return HTMLResponse(content=html_content)
                 
