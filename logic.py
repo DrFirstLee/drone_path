@@ -550,30 +550,52 @@ async def drone_analyze(file: UploadFile = File(...)):
 
                 # --- 8. [새 기능] Matplotlib을 이용한 단순화된 시각화 이미지 생성 ---
                 try:
+                    import matplotlib.pyplot as plt
+                    import io
+                    import json
+
                     plt.figure(figsize=(12, 8))
                     plt.style.use('default')
                     
                     # 배경 경로
                     plt.plot(df['Longitude'], df['Latitude'], color='#cccccc', linewidth=1, alpha=0.5, label="Original Path")
                     
+                    # 색상 및 세그먼트 매핑 정보 생성
+                    hex_to_name = {
+                        '#ff0000': 'red', '#00ff00': 'lime', '#0000ff': 'blue', '#ffff00': 'yellow',
+                        '#ff00ff': 'magenta', '#00ffff': 'cyan', '#ff8000': 'orange', '#0080ff': 'azure',
+                        '#ff0080': 'pink', '#80ff00': 'chartreuse', '#00ff80': 'spring_green', '#ff4040': 'light_red',
+                        '#4040ff': 'light_blue', '#ffd700': 'gold', '#adff2f': 'green_yellow', '#ff69b4': 'hot_pink',
+                        '#1e90ff': 'dodger_blue', '#dc143c': 'crimson', '#9400d3': 'darkviolet', '#ff6600': 'vivid_orange'
+                    }
+                    cluster_color_map = {}
+
                     # 각 세그먼트별 플로팅
                     for seg_id in sorted_seg_ids:
                         group = df[df['Final_Segment_ID'] == seg_id]
                         seg_state_final = group['State_Final'].iloc[0] if 'State_Final' in group.columns else group['State_Smooth'].iloc[0]
 
-                        # 색상 및 스타일 설정
+                        # 색상 설정 (Folium과 동일 로직)
                         if seg_state_final == 0:
-                            c = colors[(seg_id - 1) % len(colors)]
+                            c = colors[(seg_id % len(colors))].lower()
                             lw, ls = 2, '-'
                         elif seg_state_final == 1:
-                            c = colors[(seg_id - 1) % len(colors)]
+                            c = colors[(seg_id % len(colors))].lower()
                             lw, ls = 3, '--'
                         elif seg_state_final == 2:
-                            c, lw, ls = '#9400D3', 3, ':'
+                            c, lw, ls = '#9400d3', 3, ':'
                         else:
-                            c, lw, ls = '#FF6600', 3, '-.'
+                            c, lw, ls = '#ff6600', 3, '-.'
 
-                        # 불연속 구간 처리
+                        # 컬러맵 업데이트
+                        color_name = hex_to_name.get(c, c)
+                        cluster_key = f"cluster_{seg_id}"
+                        if color_name in cluster_color_map:
+                            cluster_color_map[color_name] += f", {cluster_key}"
+                        else:
+                            cluster_color_map[color_name] = cluster_key
+
+                        # 불연속 구간 처리 및 플로팅
                         indices = group.index.values
                         if len(indices) > 0:
                             idx_diff = np.diff(indices)
@@ -588,21 +610,29 @@ async def drone_analyze(file: UploadFile = File(...)):
                     plt.axis('off')
                     plt.tight_layout()
                     
-                    # 이미지를 base64로 변환
                     buf = io.BytesIO()
                     plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
                     buf.seek(0)
                     img_base64 = base64.b64encode(buf.read()).decode('utf-8')
                     plt.close()
                     
-                    # HTML 상단에 이미지 추가 (AI 분석용 데이터 소스로 활용)
+                    # HTML에 AI 분석용 패널 삽입
                     img_html = f"""
-                    <div id="vlm_simplified_container" style="position: fixed; bottom: 10px; right: 10px; width: 400px; 
-                                background-color: rgba(255,255,255,0.9); padding: 5px; border: 1px solid #ccc; z-index: 10000; box-shadow: 0 0 5px rgba(0,0,0,0.1);">
-                        <h5 style="margin:5px 0;">Simplified View (VLM Optimized)</h5>
-                        <img id="vlm_simplified_img" src="data:image/png;base64,{img_base64}" style="width:100%; height:auto;" />
-                        <div style="font-size: 8pt; color: #666; margin-top: 5px;">
-                            Solid: Line | Dash: Rotate | Blue Dot: Rotate_Line | Orange Dash-Dot: Error
+                    <div id="ai_analyze_panel" style="position: fixed; bottom: 10px; right: 10px; width: 420px; 
+                                background-color: rgba(255,255,255,0.95); padding: 10px; border: 2px solid #333; z-index: 10000; box-shadow: 0 0 15px rgba(0,0,0,0.3); font-family: sans-serif;">
+                        <h5 style="margin:0 0 10px 0; border-bottom: 1px solid #ccc; padding-bottom: 5px;">AI Analyze Overview (VLM Optimized)</h5>
+                        <img id="vlm_simplified_img" src="data:image/png;base64,{img_base64}" style="width:100%; height:auto; border: 1px solid #eee;" />
+                        <div style="font-size: 8.5pt; color: #333; margin-top: 10px; line-height: 1.4;">
+                            <strong>Trajectory Styles:</strong><br/>
+                            <span style="color:red;">━</span> Solid: Straight Line | <span style="color:blue;">---</span> Dash: Rotating Turn<br/>
+                            <span style="color:#9400D3;">...</span> Violet Dot: Rotate_Line | <span style="color:#FF6600;">-.-</span> Orange Dash-Dot: Error
+                        </div>
+                        <div id="vlm_color_mapping" style="font-size: 8pt; color: #555; margin-top: 5px; background: #f9f9f9; padding: 5px; border-radius: 3px; display:none;">
+                            {json.dumps(cluster_color_map)}
+                        </div>
+                        <div style="font-size: 8pt; color: #555; margin-top: 5px; background: #f9f9f9; padding: 5px; border-radius: 3px;">
+                            <strong>Color Mapping for AI:</strong><br/>
+                            <pre style="margin:0; white-space: pre-wrap;">{json.dumps(cluster_color_map, indent=1)}</pre>
                         </div>
                     </div>
                     """
@@ -614,9 +644,57 @@ async def drone_analyze(file: UploadFile = File(...)):
                 except Exception as plt_e:
                     print(f"Matplotlib plotting error: {plt_e}")
 
+                # HTML에 Download Panel 추가
+                if csv_links:
+                    download_panel = f"""
+                    <div style="position: fixed; top: 10px; right: 10px; width: 250px; max-height: 80vh; overflow-y: auto; 
+                                background-color: white; padding: 10px; border: 2px solid #ccc; z-index: 9999; box-shadow: 0 0 10px rgba(0,0,0,0.2);">
+                        <h4>Segment CSV Downloads</h4>
+                        {''.join(csv_links)}
+                    </div>
+                    """
+                    if "</body>" in html_content:
+                        html_content = html_content.replace("</body>", f"{download_panel}</body>")
+                    else:
+                        html_content += download_panel
+
                 return HTMLResponse(content=html_content)
                 
         except Exception as e:
             print(f"오류 발생: {e}")
             return JSONResponse(status_code=500, content={"error": str(e)})
+
+@app.post("/drone_analyze_gpt")
+async def drone_analyze_gpt(file: UploadFile = File(...), context_json: str = Form(...)):
+    import httpx
+    if not os.getenv("OPENAPI_KEY"):
+        raise HTTPException(status_code=500, detail="OPENAI API key not configured")
+    
+    image_content = await file.read()
+    base64_image = base64.b64encode(image_content).decode('utf-8')
+    
+    async def event_generator():
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            payload = {
+                "model": "gpt-4o",
+                "messages": [
+                    {"role": "system", "content": "당신은 전문 항공 데이터 분석가입니다. 2D 궤적 이미지를 기반으로 세분화 품질을 평가하세요."},
+                    {"role": "user", "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
+                        {"type": "text", "text": f"분석 정보:\n{context_json}\n\n명백한 실패 사례(MERGE/SPLIT)만 보고하세요. 한국어로 답변하세요."}
+                    ]}
+                ],
+                "stream": True
+            }
+            async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
+                                   headers={"Authorization": f"Bearer {os.getenv('OPENAPI_KEY')}"},
+                                   json=payload) as response:
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        if "[DONE]" in line: break
+                        try:
+                            content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
+                            if content: yield content
+                        except: continue
+    return StreamingResponse(event_generator(), media_type="text/plain")
 
