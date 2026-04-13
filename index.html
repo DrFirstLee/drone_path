@@ -769,39 +769,34 @@
                     }
                 }
 
+                // 캡처 헬퍼 함수
                 const capture = async () => {
                     const doc = iframe.contentDocument;
                     const originalStyles = [];
 
-                    // 모든 transform을 가진 요소를 재귀적으로 찾아서 flatten
-                    const allTransformed = doc.querySelectorAll('[style*="transform"], .leaflet-pane, .leaflet-marker-icon, .leaflet-popup-marker, .leaflet-proxy');
-
-                    // 추가: leaflet-map-pane 하위의 모든 요소 중 transform이 있는 것
+                    // 핵심: leaflet-map-pane만 flatten (자식 pane은 상대좌표이므로 건드리지 않음)
                     const mapPane = doc.querySelector('.leaflet-map-pane');
                     if (mapPane) {
-                        const allChildren = mapPane.querySelectorAll('*');
-                        allChildren.forEach(el => {
-                            const computed = iframeWin.getComputedStyle(el);
-                            const transform = computed.transform;
-                            if (transform && transform !== 'none') {
-                                try {
-                                    const matrix = new DOMMatrix(transform);
-                                    if (matrix.m41 !== 0 || matrix.m42 !== 0) {
-                                        originalStyles.push({
-                                            el: el,
-                                            transform: el.style.transform,
-                                            left: el.style.left,
-                                            top: el.style.top
-                                        });
-                                        const currentLeft = parseFloat(computed.left) || 0;
-                                        const currentTop = parseFloat(computed.top) || 0;
-                                        el.style.transform = 'none';
-                                        el.style.left = (currentLeft + matrix.m41) + 'px';
-                                        el.style.top = (currentTop + matrix.m42) + 'px';
-                                    }
-                                } catch (e) { }
+                        const style = iframeWin.getComputedStyle(mapPane);
+                        const transform = style.transform;
+                        if (transform && transform !== 'none') {
+                            try {
+                                const matrix = new DOMMatrix(transform);
+                                originalStyles.push({
+                                    el: mapPane,
+                                    transform: mapPane.style.transform,
+                                    left: mapPane.style.left,
+                                    top: mapPane.style.top
+                                });
+                                const currentLeft = parseFloat(mapPane.style.left) || 0;
+                                const currentTop = parseFloat(mapPane.style.top) || 0;
+                                mapPane.style.transform = 'none';
+                                mapPane.style.left = (currentLeft + matrix.m41) + 'px';
+                                mapPane.style.top = (currentTop + matrix.m42) + 'px';
+                            } catch (e) {
+                                console.warn("Map pane transform conversion failed:", e);
                             }
-                        });
+                        }
                     }
 
                     const canvas = await html2canvas(doc.body, {
