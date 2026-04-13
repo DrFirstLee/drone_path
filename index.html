@@ -769,62 +769,41 @@
                     }
                 }
 
-                // 캡처 헬퍼 함수
                 const capture = async () => {
                     const doc = iframe.contentDocument;
                     const originalStyles = [];
 
-                    // 1. 모든 leaflet-pane의 transform → left/top 변환
-                    const panes = doc.querySelectorAll('.leaflet-pane');
-                    panes.forEach(pane => {
-                        const style = iframeWin.getComputedStyle(pane);
-                        const transform = style.transform;
-                        if (transform && transform !== 'none') {
-                            try {
-                                const matrix = new DOMMatrix(transform);
-                                originalStyles.push({
-                                    el: pane,
-                                    transform: pane.style.transform,
-                                    left: pane.style.left,
-                                    top: pane.style.top
-                                });
-                                const currentLeft = parseFloat(pane.style.left) || 0;
-                                const currentTop = parseFloat(pane.style.top) || 0;
-                                pane.style.transform = 'none';
-                                pane.style.left = (currentLeft + matrix.m41) + 'px';
-                                pane.style.top = (currentTop + matrix.m42) + 'px';
-                            } catch (e) {
-                                console.warn("Transform conversion failed for pane:", e);
-                            }
-                        }
-                    });
+                    // 모든 transform을 가진 요소를 재귀적으로 찾아서 flatten
+                    const allTransformed = doc.querySelectorAll('[style*="transform"], .leaflet-pane, .leaflet-marker-icon, .leaflet-popup-marker, .leaflet-proxy');
 
-                    // 2. 개별 마커(DivIcon)들의 transform도 변환
-                    const markers = doc.querySelectorAll('.leaflet-marker-icon, .leaflet-marker-shadow');
-                    markers.forEach(marker => {
-                        const style = iframeWin.getComputedStyle(marker);
-                        const transform = style.transform;
-                        if (transform && transform !== 'none') {
-                            try {
-                                const matrix = new DOMMatrix(transform);
-                                originalStyles.push({
-                                    el: marker,
-                                    transform: marker.style.transform,
-                                    left: marker.style.left,
-                                    top: marker.style.top
-                                });
-                                const currentLeft = parseFloat(marker.style.left) || 0;
-                                const currentTop = parseFloat(marker.style.top) || 0;
-                                marker.style.transform = 'none';
-                                marker.style.left = (currentLeft + matrix.m41) + 'px';
-                                marker.style.top = (currentTop + matrix.m42) + 'px';
-                            } catch (e) {
-                                console.warn("Transform conversion failed for marker:", e);
+                    // 추가: leaflet-map-pane 하위의 모든 요소 중 transform이 있는 것
+                    const mapPane = doc.querySelector('.leaflet-map-pane');
+                    if (mapPane) {
+                        const allChildren = mapPane.querySelectorAll('*');
+                        allChildren.forEach(el => {
+                            const computed = iframeWin.getComputedStyle(el);
+                            const transform = computed.transform;
+                            if (transform && transform !== 'none') {
+                                try {
+                                    const matrix = new DOMMatrix(transform);
+                                    if (matrix.m41 !== 0 || matrix.m42 !== 0) {
+                                        originalStyles.push({
+                                            el: el,
+                                            transform: el.style.transform,
+                                            left: el.style.left,
+                                            top: el.style.top
+                                        });
+                                        const currentLeft = parseFloat(computed.left) || 0;
+                                        const currentTop = parseFloat(computed.top) || 0;
+                                        el.style.transform = 'none';
+                                        el.style.left = (currentLeft + matrix.m41) + 'px';
+                                        el.style.top = (currentTop + matrix.m42) + 'px';
+                                    }
+                                } catch (e) { }
                             }
-                        }
-                    });
+                        });
+                    }
 
-                    // 3. 스크린샷 캡처
                     const canvas = await html2canvas(doc.body, {
                         useCORS: true,
                         allowTaint: true,
@@ -833,7 +812,7 @@
                         logging: false
                     });
 
-                    // 4. 스타일 원상 복구
+                    // 복구
                     originalStyles.forEach(s => {
                         s.el.style.transform = s.transform;
                         s.el.style.left = s.left;
@@ -842,7 +821,6 @@
 
                     return canvas;
                 };
-
                 // 스크린샷 목록
                 const screenshots = [];
 
