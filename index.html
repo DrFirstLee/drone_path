@@ -841,17 +841,23 @@
                 if (aiStaticResultText) aiStaticResultText.innerHTML = "";
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
-
+                let fullText = "";
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
-                    if (aiStaticResultText) aiStaticResultText.innerHTML += chunk;
+                    fullText += chunk;
+
+                    if (aiStaticResultText) {
+                        // **강조** 패턴을 <strong>강조</strong>로 변환하여 HTML 반영
+                        const formattedText = fullText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        aiStaticResultText.innerHTML = formattedText;
+                    }
                 }
 
             } catch (err) {
                 console.error("AI Analyze error:", err);
-                aiResultText.innerHTML = "분석 중 오류가 발생했습니다: " + err.message;
+                if (aiStaticResultText) aiStaticResultText.innerHTML = "분석 중 오류가 발생했습니다: " + err.message;
             } finally {
                 aiBtn.disabled = false;
                 aiBtn.innerHTML = 'AI 분석';
