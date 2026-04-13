@@ -767,19 +767,54 @@
 
                 // 캡처 헬퍼 함수
                 const capture = async () => {
-                    // Leaflet 씽크 이슈 해결을 위한 가공 (transform 임시 제거)
-                    const mapPane = iframe.contentDocument.querySelector('.leaflet-map-pane');
-                    const originalTransform = mapPane ? mapPane.style.transform : '';
-                    if (mapPane) mapPane.style.transform = 'none';
+                    const doc = iframe.contentDocument;
+                    const panes = doc.querySelectorAll('.leaflet-pane');
+                    const originalStyles = [];
 
-                    const canvas = await html2canvas(iframe.contentDocument.body, {
+                    // 1. Leaflet의 CSS transform(translate3d)을 html2canvas가 오해하지 않도록 left/top으로 변환
+                    panes.forEach(pane => {
+                        const style = iframeWin.getComputedStyle(pane);
+                        const transform = style.transform;
+                        
+                        if (transform && transform !== 'none') {
+                            try {
+                                const matrix = new DOMMatrix(transform);
+                                originalStyles.push({
+                                    pane: pane,
+                                    transform: pane.style.transform,
+                                    left: pane.style.left,
+                                    top: pane.style.top
+                                });
+                                
+                                // transform의 x, y 값을 기존 left, top에 더함
+                                const currentLeft = parseFloat(pane.style.left) || 0;
+                                const currentTop = parseFloat(pane.style.top) || 0;
+                                
+                                pane.style.transform = 'none';
+                                pane.style.left = (currentLeft + matrix.m41) + 'px';
+                                pane.style.top = (currentTop + matrix.m42) + 'px';
+                            } catch (e) {
+                                console.warn("Transform conversion failed for pane:", pane, e);
+                            }
+                        }
+                    });
+
+                    // 2. 스크린샷 캡처
+                    const canvas = await html2canvas(doc.body, {
                         useCORS: true,
                         allowTaint: true,
                         backgroundColor: '#ffffff',
-                        scale: 1.5 // 해상도 향상
+                        scale: 1.5,
+                        logging: false
                     });
 
-                    if (mapPane) mapPane.style.transform = originalTransform;
+                    // 3. 스타일 원상 복구
+                    originalStyles.forEach(s => {
+                        s.pane.style.transform = s.transform;
+                        s.pane.style.left = s.left;
+                        s.pane.style.top = s.top;
+                    });
+
                     return canvas;
                 };
 
@@ -795,7 +830,7 @@
                     });
                     if (featureGroup.getLayers().length > 0) {
                         mapObj.fitBounds(featureGroup.getBounds(), { padding: [20, 20] });
-                        await new Promise(r => setTimeout(r, 600)); // 타일 로딩 대기
+                        await new Promise(r => setTimeout(r, 800)); // 타일 로딩 대기
                     }
                 }
                 screenshots.push(await capture());
@@ -826,7 +861,7 @@
 
                         for (const pt of detailPoints) {
                             mapObj.setView(pt, detailZoom, { animate: false });
-                            await new Promise(r => setTimeout(r, 500)); // 로딩 및 렌더링 대기
+                            await new Promise(r => setTimeout(r, 700)); // 로딩 및 렌더링 대기
                             screenshots.push(await capture());
                         }
                     }
