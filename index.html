@@ -772,38 +772,59 @@
                 // 캡처 헬퍼 함수
                 const capture = async () => {
                     const doc = iframe.contentDocument;
-                    const panes = doc.querySelectorAll('.leaflet-pane');
                     const originalStyles = [];
 
-                    // 1. Leaflet의 CSS transform(translate3d)을 html2canvas가 오해하지 않도록 left/top으로 변환
+                    // 1. 모든 leaflet-pane의 transform → left/top 변환
+                    const panes = doc.querySelectorAll('.leaflet-pane');
                     panes.forEach(pane => {
                         const style = iframeWin.getComputedStyle(pane);
                         const transform = style.transform;
-
                         if (transform && transform !== 'none') {
                             try {
                                 const matrix = new DOMMatrix(transform);
                                 originalStyles.push({
-                                    pane: pane,
+                                    el: pane,
                                     transform: pane.style.transform,
                                     left: pane.style.left,
                                     top: pane.style.top
                                 });
-
-                                // transform의 x, y 값을 기존 left, top에 더함
                                 const currentLeft = parseFloat(pane.style.left) || 0;
                                 const currentTop = parseFloat(pane.style.top) || 0;
-
                                 pane.style.transform = 'none';
                                 pane.style.left = (currentLeft + matrix.m41) + 'px';
                                 pane.style.top = (currentTop + matrix.m42) + 'px';
                             } catch (e) {
-                                console.warn("Transform conversion failed for pane:", pane, e);
+                                console.warn("Transform conversion failed for pane:", e);
                             }
                         }
                     });
 
-                    // 2. 스크린샷 캡처
+                    // 2. 개별 마커(DivIcon)들의 transform도 변환
+                    const markers = doc.querySelectorAll('.leaflet-marker-icon, .leaflet-marker-shadow');
+                    markers.forEach(marker => {
+                        const style = iframeWin.getComputedStyle(marker);
+                        const transform = style.transform;
+                        if (transform && transform !== 'none') {
+                            try {
+                                const matrix = new DOMMatrix(transform);
+                                originalStyles.push({
+                                    el: marker,
+                                    transform: marker.style.transform,
+                                    left: marker.style.left,
+                                    top: marker.style.top
+                                });
+                                const currentLeft = parseFloat(marker.style.left) || 0;
+                                const currentTop = parseFloat(marker.style.top) || 0;
+                                marker.style.transform = 'none';
+                                marker.style.left = (currentLeft + matrix.m41) + 'px';
+                                marker.style.top = (currentTop + matrix.m42) + 'px';
+                            } catch (e) {
+                                console.warn("Transform conversion failed for marker:", e);
+                            }
+                        }
+                    });
+
+                    // 3. 스크린샷 캡처
                     const canvas = await html2canvas(doc.body, {
                         useCORS: true,
                         allowTaint: true,
@@ -812,11 +833,11 @@
                         logging: false
                     });
 
-                    // 3. 스타일 원상 복구
+                    // 4. 스타일 원상 복구
                     originalStyles.forEach(s => {
-                        s.pane.style.transform = s.transform;
-                        s.pane.style.left = s.left;
-                        s.pane.style.top = s.top;
+                        s.el.style.transform = s.transform;
+                        s.el.style.left = s.left;
+                        s.el.style.top = s.top;
                     });
 
                     return canvas;
@@ -865,7 +886,7 @@
 
                         for (const pt of detailPoints) {
                             mapObj.setView(pt, detailZoom, { animate: false });
-                            await new Promise(r => setTimeout(r, 700)); // 로딩 및 렌더링 대기
+                            await new Promise(r => setTimeout(r, 1000)); // 700 → 1000ms
                             screenshots.push(await capture());
                         }
                     }
