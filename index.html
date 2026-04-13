@@ -135,6 +135,68 @@
                 transform: rotate(360deg);
             }
         }
+
+        /* AI Thinking Style */
+        .thinking-container {
+            margin-top: 1rem;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .thinking-header {
+            padding: 0.75rem 1rem;
+            background: #f1f5f9;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #64748b;
+        }
+
+        .thinking-header:hover {
+            background: #e2e8f0;
+        }
+
+        .thinking-content {
+            padding: 1rem;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: #475569;
+            max-height: 300px;
+            overflow-y: auto;
+            border-top: 1px solid #e2e8f0;
+            white-space: pre-wrap;
+            display: block; /* Visible by default during streaming */
+        }
+
+        .thinking-dot {
+            width: 8px;
+            height: 8px;
+            background-color: #8b5cf6;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 4px;
+            animation: pulse 1.5s infinite ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(0.8); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 1; }
+        }
+
+        .result-conclusion {
+            background: #ffffff;
+            border: 2px solid #8b5cf6;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            margin-top: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(139, 92, 246, 0.1);
+        }
     </style>
 </head>
 
@@ -213,9 +275,20 @@
                     </div>
                     <div id="aiResultSection" style="border-top: 1px solid #e5e7eb; margin-top: 1rem; padding-top: 1.5rem; display: none;">
                         <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827; display: flex; align-items: center; gap: 10px;">
-                            <span style="font-size:1.3rem;">🤖</span> AI 분석 결과
+                            <span style="font-size:1.3rem;">🤖</span> AI 위성 분석 결과
                         </h3>
-                        <div id="aiStaticResultText" style="line-height: 1.6; color: #374151; white-space: pre-wrap; font-size: 1rem; background: #f9fafb; padding: 1.5rem; border-radius: 0.75rem; border: 1px solid #e5e7eb;"></div>
+                        
+                        <!-- Thinking Section -->
+                        <div id="aiThinkingContainer" class="thinking-container" style="display: none;">
+                            <div class="thinking-header" onclick="toggleThinking()">
+                                <span><span class="thinking-dot"></span> AI가 경로상 오류를 분석 중입니다...</span>
+                                <span id="thinkingToggleIcon">▼</span>
+                            </div>
+                            <div id="aiThinkingText" class="thinking-content"></div>
+                        </div>
+
+                        <!-- Final Result Section -->
+                        <div id="aiStaticResultText" class="result-conclusion" style="display: none;"></div>
                     </div>
                     <div id="splitSection" style="border-top: 1px solid #e5e7eb; pt-4; margin-top: 1rem; padding-top: 1.5rem;">
                         <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">✂️ 클러스터 분리 (Split)</h3>
@@ -806,19 +879,78 @@
                 if (!response.ok) throw new Error("API 연동 실패");
 
                 // 4. 스트리밍 응답 처리
-                if (aiStaticResultText) aiStaticResultText.innerHTML = "";
+                const aiThinkingContainer = document.getElementById('aiThinkingContainer');
+                const aiThinkingText = document.getElementById('aiThinkingText');
+                const aiStaticResultText = document.getElementById('aiStaticResultText');
+                
+                if (aiThinkingText) aiThinkingText.innerHTML = "";
+                if (aiStaticResultText) {
+                    aiStaticResultText.innerHTML = "";
+                    aiStaticResultText.style.display = 'none';
+                }
+                
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 let fullText = "";
+                let currentMode = "THINKING"; // Default to thinking
+                
+                if (aiThinkingContainer) aiThinkingContainer.style.display = 'block';
+
                 while (true) {
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
                     fullText += chunk;
-                    if (aiStaticResultText) {
-                        aiStaticResultText.innerHTML = fullText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                    
+                    // Mode Switching Logic
+                    if (fullText.includes("[THINKING]")) {
+                        currentMode = "THINKING";
+                        // Simple way to handle markers is to just slice or use regex later
+                    }
+                    if (fullText.includes("[/THINKING]")) {
+                        // When thinking ends, we can collapse it or just keep it there
+                    }
+                    if (fullText.includes("[RESULT]")) {
+                        currentMode = "RESULT";
+                        if (aiStaticResultText) aiStaticResultText.style.display = 'block';
+                    }
+
+                    // Render content based on mode
+                    const parts = fullText.split(/\[THINKING\]|\[\/THINKING\]|\[RESULT\]/);
+                    
+                    // parts[1] is thinking (usually)
+                    // parts[2] is result (usually)
+                    
+                    let thinkingContent = "";
+                    let resultContent = "";
+                    
+                    // Advanced parsing to handle streaming markers
+                    let tempText = fullText;
+                    if (tempText.includes("[THINKING]")) {
+                        let thinkPart = tempText.split("[THINKING]")[1] || "";
+                        if (thinkPart.includes("[/THINKING]")) {
+                            thinkingContent = thinkPart.split("[/THINKING]")[0];
+                            let rest = thinkPart.split("[/THINKING]")[1] || "";
+                            if (rest.includes("[RESULT]")) {
+                                resultContent = rest.split("[RESULT]")[1] || "";
+                            }
+                        } else {
+                            thinkingContent = thinkPart;
+                        }
+                    }
+
+                    if (aiThinkingText && thinkingContent) {
+                        aiThinkingText.innerHTML = thinkingContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        // Auto-scroll thinking
+                        aiThinkingText.scrollTop = aiThinkingText.scrollHeight;
+                    }
+                    if (aiStaticResultText && resultContent) {
+                        aiStaticResultText.innerHTML = resultContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
                     }
                 }
+                
+                // After streaming finishes, collapse thinking if you want
+                // toggleThinking(false);
 
             } catch (err) {
                 console.error("AI Analyze error:", err);
@@ -1127,6 +1259,22 @@
                 }
             }
         });
+
+        function toggleThinking(forceState) {
+            const content = document.getElementById('aiThinkingText');
+            const icon = document.getElementById('thinkingToggleIcon');
+            if (!content) return;
+            
+            const isVisible = forceState !== undefined ? !forceState : (content.style.display === 'none');
+            
+            if (isVisible) {
+                content.style.display = 'block';
+                icon.textContent = '▼';
+            } else {
+                content.style.display = 'none';
+                icon.textContent = '▶';
+            }
+        }
     </script>
 </body>
 
