@@ -787,14 +787,30 @@
                     ctx.fillRect(0, 0, rect.width, rect.height);
 
                     // 타일 이미지 그리기
+                    // 타일 이미지 그리기 — CORS 우회
                     const tiles = doc.querySelectorAll('.leaflet-tile-loaded');
                     for (const tile of tiles) {
                         const tileRect = tile.getBoundingClientRect();
                         const x = tileRect.left - rect.left;
                         const y = tileRect.top - rect.top;
                         try {
-                            ctx.drawImage(tile, x, y, tileRect.width, tileRect.height);
-                        } catch (e) { /* CORS 타일 무시 */ }
+                            // tile.src를 fetch로 가져와서 blob URL로 변환
+                            const resp = await window.fetch(tile.src, { mode: 'cors' });
+                            if (!resp.ok) throw new Error('fetch failed');
+                            const blob = await resp.blob();
+                            const blobUrl = URL.createObjectURL(blob);
+                            const img = new Image();
+                            await new Promise((resolve, reject) => {
+                                img.onload = resolve;
+                                img.onerror = reject;
+                                img.src = blobUrl;
+                            });
+                            ctx.drawImage(img, x, y, tileRect.width, tileRect.height);
+                            URL.revokeObjectURL(blobUrl);
+                        } catch (e) {
+                            // CORS 실패 시 — 빈 영역으로 남김 (배경은 이미 흰색)
+                            console.warn('Tile fetch failed:', e);
+                        }
                     }
 
                     // 2. SVG (polyline) 그리기
