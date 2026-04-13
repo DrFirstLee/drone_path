@@ -467,7 +467,8 @@
                 const dataLines = lines.slice(1);
 
                 // Use the exact same index calculation for both Map and CSV
-                const splitIndex = Math.max(1, Math.min(dataLines.length - 1, Math.floor(dataLines.length * splitRatio)));
+                // const splitIndex = Math.max(1, Math.min(dataLines.length - 1, Math.floor(dataLines.length * splitRatio)));
+                const splitIndex = Math.floor(dataLines.length * splitRatio);
 
                 const part1Lines = dataLines.slice(0, splitIndex);
                 const part2Lines = dataLines.slice(splitIndex);
@@ -555,8 +556,11 @@
 
                         if (isMatch && layer.getLatLngs) {
                             const latlngs = layer.getLatLngs();
+                            // const sIdx = Math.min(latlngs.length - 1, splitIndex);
+                            // const pts1 = latlngs.slice(0, sIdx + 1);
+                            // Map 기준 — 여기서 +1이 붙어있음
                             const sIdx = Math.min(latlngs.length - 1, splitIndex);
-                            const pts1 = latlngs.slice(0, sIdx + 1);
+                            const pts1 = latlngs.slice(0, sIdx + 1);  // ← sIdx+1
                             const pts2 = latlngs.slice(sIdx);
 
                             console.log('[Split] Matched layer! pts1:', pts1.length, 'pts2:', pts2.length, 'tooltip:', tt);
@@ -775,7 +779,7 @@
                     panes.forEach(pane => {
                         const style = iframeWin.getComputedStyle(pane);
                         const transform = style.transform;
-                        
+
                         if (transform && transform !== 'none') {
                             try {
                                 const matrix = new DOMMatrix(transform);
@@ -785,11 +789,11 @@
                                     left: pane.style.left,
                                     top: pane.style.top
                                 });
-                                
+
                                 // transform의 x, y 값을 기존 left, top에 더함
                                 const currentLeft = parseFloat(pane.style.left) || 0;
                                 const currentTop = parseFloat(pane.style.top) || 0;
-                                
+
                                 pane.style.transform = 'none';
                                 pane.style.left = (currentLeft + matrix.m41) + 'px';
                                 pane.style.top = (currentTop + matrix.m42) + 'px';
