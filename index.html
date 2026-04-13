@@ -826,6 +826,8 @@
             const aiBtn = document.getElementById('aiAnalyzeBtn');
             const aiResultSection = document.getElementById('aiResultSection');
             const aiStaticResultText = document.getElementById('aiStaticResultText');
+            const aiThinkingContainer = document.getElementById('aiThinkingContainer');
+            const aiThinkingText = document.getElementById('aiThinkingText');
 
             try {
                 aiBtn.disabled = true;
@@ -879,10 +881,6 @@
                 if (!response.ok) throw new Error("API 연동 실패");
 
                 // 4. 스트리밍 응답 처리
-                const aiThinkingContainer = document.getElementById('aiThinkingContainer');
-                const aiThinkingText = document.getElementById('aiThinkingText');
-                const aiStaticResultText = document.getElementById('aiStaticResultText');
-                
                 if (aiThinkingText) aiThinkingText.innerHTML = "";
                 if (aiStaticResultText) {
                     aiStaticResultText.innerHTML = "";
