@@ -865,7 +865,7 @@
 
                         for (const pt of detailPoints) {
                             mapObj.setView(pt, detailZoom, { animate: false });
-                            await new Promise(r => setTimeout(r, 1000)); // 700 → 1000ms
+                            await new Promise(r => setTimeout(r, 700)); // 로딩 및 렌더링 대기
                             screenshots.push(await capture());
                         }
                     }
@@ -1236,24 +1236,13 @@
                 }
 
                 // Inject the HTML directly into the iframe
-
-                resultContainer.style.display = 'block';
                 resultFrame.srcdoc = htmlContent;
+                resultContainer.style.display = 'block';
 
                 resultFrame.onload = () => {
-                    // iframe 레이아웃이 완전히 확정된 후 Leaflet 지도 크기를 재계산
-                    setTimeout(() => {
-                        const iframeWin = resultFrame.contentWindow;
-                        for (let key in iframeWin) {
-                            if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].invalidateSize) {
-                                iframeWin[key].invalidateSize();
-                                break;
-                            }
-                        }
-                        initMergePanel();
-                        extractClustersFromPanel();
-                        setupMapInteractions();
-                    }, 300);
+                    initMergePanel();
+                    extractClustersFromPanel();
+                    setupMapInteractions();
                 };
 
                 // Scroll to result
