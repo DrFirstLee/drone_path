@@ -135,7 +135,6 @@
                 transform: rotate(360deg);
             }
         }
-
     </style>
 </head>
 
@@ -786,7 +785,7 @@
 
                 // 스크린샷 목록
                 const screenshots = [];
-                
+
                 // (A) 전체 오버뷰 캡처
                 if (mapObj) {
                     // 전체 경로가 다 보이도록 fitBounds
@@ -807,13 +806,13 @@
                     mapObj.eachLayer(layer => {
                         if (layer.getLatLngs && !layer._isSplitPreview) featureGroup.addLayer(layer);
                     });
-                    
+
                     if (featureGroup.getLayers().length > 0) {
                         const bounds = featureGroup.getBounds();
                         const center = bounds.getCenter();
                         const sw = bounds.getSouthWest();
                         const ne = bounds.getNorthEast();
-                        
+
                         // 4개의 관심 지점 (각 사분면 중심)
                         const detailPoints = [
                             iframeWin.L.latLng((sw.lat + center.lat) / 2, (sw.lng + center.lng) / 2), // SW
@@ -836,12 +835,12 @@
                 // (C) 이미지 스티칭 (세로로 합치기)
                 const totalWidth = Math.max(...screenshots.map(s => s.width));
                 const totalHeight = screenshots.reduce((sum, s) => sum + s.height, 0);
-                
+
                 const finalCanvas = document.createElement('canvas');
                 finalCanvas.width = totalWidth;
                 finalCanvas.height = totalHeight;
                 const ctx = finalCanvas.getContext('2d');
-                
+
                 let currentY = 0;
                 for (const s of screenshots) {
                     ctx.drawImage(s, 0, currentY);
@@ -864,15 +863,7 @@
                 };
 
                 const clusterColorMap = {};
-                const iframeWin = iframe.contentWindow;
-                let mapObj = null;
-                for (let key in iframeWin) {
-                    if (key.startsWith('map_') && iframeWin[key] && iframeWin[key].eachLayer) {
-                        mapObj = iframeWin[key];
-                        break;
-                    }
-                }
-
+                // iframeWin과 mapObj는 이미 상단에서 선언됨
                 if (mapObj) {
                     mapObj.eachLayer(layer => {
                         if (layer.options && layer.options.color && layer.getTooltip) {
