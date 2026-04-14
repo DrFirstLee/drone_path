@@ -1207,41 +1207,61 @@
                 statusDiv.textContent = "분석 완료! 결과 지도를 표시합니다.";
                 statusDiv.style.color = "#059669"; // Green
 
-                // [Update] Check for embedded CSV download panel and extract it to the main UI
+                // [Update] Extract components from the backend-provided HTML
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(htmlContent, 'text/html');
-                const headings = Array.from(doc.querySelectorAll('h4'));
-                const downloadHeader = headings.find(h => h.textContent.includes('Segment CSV Downloads'));
-
-                let externalPanel = document.getElementById('externalDownloadPanel');
-                if (externalPanel) {
-                    externalPanel.style.display = 'none'; // Reset previous results
+                
+                // 1. Extract AI Report
+                const aiReportEl = doc.getElementById('ai_report_content');
+                let hasBackendAI = false;
+                if (aiReportEl && aiReportEl.textContent.trim().length > 10) {
+                    const aiResultSection = document.getElementById('aiResultSection');
+                    const aiStaticResultText = document.getElementById('aiStaticResultText');
+                    if (aiResultSection && aiStaticResultText) {
+                        aiResultSection.style.display = 'block';
+                        aiStaticResultText.style.display = 'block';
+                        // Keep the backend-provided HTML report
+                        aiStaticResultText.innerHTML = aiReportEl.innerHTML.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        hasBackendAI = true;
+                    }
                 }
 
-                if (downloadHeader) {
-                    const downloadDiv = downloadHeader.parentElement;
+                // 2. Extract CSV Downloads
+                const downloadSection = doc.getElementById('download_section');
+                let externalPanel = document.getElementById('externalDownloadPanel');
+                if (externalPanel) externalPanel.style.display = 'none';
 
-                    // Create container if not exists
+                if (downloadSection) {
                     if (!externalPanel) {
                         externalPanel = document.createElement('div');
                         externalPanel.id = 'externalDownloadPanel';
-                        externalPanel.className = 'upload-card'; // Use existing card style
+                        externalPanel.className = 'upload-card';
                         externalPanel.style.textAlign = 'left';
                         externalPanel.style.maxHeight = '300px';
                         externalPanel.style.overflowY = 'auto';
                         externalPanel.style.marginTop = '2rem';
-                        // Insert after result container
                         resultContainer.parentNode.insertBefore(externalPanel, resultContainer.nextSibling);
                     }
-
-                    // Copy content
-                    externalPanel.innerHTML = downloadDiv.innerHTML;
+                    externalPanel.innerHTML = downloadSection.innerHTML;
                     externalPanel.style.display = 'block';
-
-                    // Remove from the map HTML so it doesn't cover the map
-                    downloadDiv.remove();
-                    htmlContent = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
                 }
+
+                // 3. Clean up the HTML to be shown in the iframe (remove redundant sidebar)
+                const sidebar = doc.getElementById('sidebar');
+                if (sidebar) sidebar.remove();
+                
+                // Reset map width to full screen since sidebar is removed
+                const styleTags = doc.querySelectorAll('style');
+                styleTags.forEach(st => {
+                    if (st.textContent.includes('.folium-map')) {
+                        st.textContent = st.textContent.replace(/width:\s*calc\(100%\s*-\s*400px\)\s*!important/g, 'width: 100% !important');
+                    }
+                });
+
+                htmlContent = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
+
+                // Store whether we have backend AI for the onload trigger
+                resultFrame.dataset.hasBackendAI = hasBackendAI;
 
                 // Inject the HTML directly into the iframe
                 resultFrame.srcdoc = htmlContent;
@@ -1252,10 +1272,12 @@
                     extractClustersFromPanel();
                     setupMapInteractions();
                     
-                    // Automatically trigger AI analysis
-                    setTimeout(() => {
-                        performAIAnalyze();
-                    }, 500);
+                    // Automatically trigger manual AI analysis ONLY if backend didn't provide it
+                    if (resultFrame.dataset.hasBackendAI !== "true") {
+                        setTimeout(() => {
+                            performAIAnalyze();
+                        }, 500);
+                    }
                 };
 
                 // Scroll to result

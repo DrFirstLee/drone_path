@@ -349,153 +349,136 @@ async def drone_analyze_xy(file: UploadFile = File(...)):
 
 
 
+
+
+async def get_drone_analysis_stream(base64_image: str, context_json: str, mime_type: str = "image/png"):
+    """
+    GPT Vision 모델을 사용하여 드론 경로의 SPLIT/MERGE 오류를 분석하는 코어 스트리밍 로직입니다.
+    """
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        split_text = ""
+        merge_text = ""
+        
+        # --- PHASE 1: SPLIT 분석 ---
+        yield "[THINKING]### [SPLIT (분리) 분석 결과]\n"
+        split_payload = {
+            "model": "gpt-5.4-2026-03-05", 
+            "messages": [
+                {"role": "system", "content": "당신은 전문 항공 데이터 분석가입니다."},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}},
+                        {
+                            "type": "text",
+                            "text": (
+                                "### 임무 (TASK 1): SPLIT (분리) 분석\n"
+                                "1. [분석 대상]: 'Line(직선)', 'Rotate_Line(보라색)', 'Rotate_Error(주황색)' 클러스터를 모두 검토하세요.\n"
+                                "2. 클러스터 내부에 90도 이상의 급격한 회전, 굴곡(n-자, ㄴ-자, ㄷ-자 형태), 또는 루프가 포함된 경우를 찾아내세요.\n"
+                                "3. 실제로는 명확한 직선과 커브,회전이 섞여 있어 분리가 필요한 케이스를 엄격하게 찾아내세요.\n"
+                                "꺾이는 지점이 같은 색으로 묶여 있다면 이는 명백한 분리 오류입니다.\n\n"
+                                "### 부정적 제약 조건 (중요 지침)\n"
+                                "- 이미 코너 부분이 별도의 'Rotate' 클러스터로 분리되어 색상이 바뀌어 있다면 이는 정상입니다.\n"
+                                "- 알고리즘이 턴(Turn) 구간을 감지하지 못해 두 개의 직선 변을 하나의 색으로 이어버린 모든 케이스를 보고하세요.\n"
+                                "### 보고 형식 (REPORT FORMAT)\n"
+                                "모든 답변은 '한국어'로 작성하세요. 식별된 각 SPLIT 예외 사항에 대해 대상 클러스터 ID와 구체적인 이유를 일반 텍스트 형식으로 설명해 주세요."
+                            )
+                        },
+                    ]
+                }
+            ],
+            "stream": True
+        }
+
+        async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
+                               headers={"Authorization": f"Bearer {OPENAPI_KEY}"}, json=split_payload) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    if "[DONE]" in line: break
+                    try:
+                        content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
+                        if content:
+                            split_text += content
+                            yield content
+                    except: continue
+
+        # --- PHASE 2: MERGE 분석 ---
+        yield "\n\n---\n### [MERGE (병합) 분석 결과]\n"
+        merge_payload = {
+            "model": "gpt-5.4-2026-03-05",
+            "messages": [
+                {"role": "system", "content": "당신은 전문 항공 데이터 분석가입니다."},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}},
+                        {
+                            "type": "text",
+                            "text": (
+                                f"다음 드론 궤적 이미지와 컬러 매핑 정보를 분석해 주세요:\n{context_json}\n\n"
+                                "### 임무 (TASK 2): MERGE (병합) 분석\n"
+                                "1. [MERGE (병합)]: 동일한 성격의 경로가 아무런 이유 없이 두 개 이상의 인접한 색상으로 나뉜 경우를 찾아내세요.\n"
+                                "2. [직선 병합]: 완벽하게 동일한 베이스라인(직선) 상에 있으며, 단순히 컬러만 중간에 바뀐 인접한 두 직선만 병합 대상으로 판단하세요.\n"
+                                "3. [회전 병합]: 하나의 연속된 부드러운 곡선이나 루프가 여러 개의 Rotate 색상으로 쪼개져 있는 경우만 병합 대상으로 판단하세요.\n"
+                                "4. [병합 금지]: 경로가 꺾이는 '꼭짓점(Corner)'을 기준으로 나뉜 구간은 절대 병합하면 안 됩니다. 꺾임이 있다면 서로 다른 성격의 구간입니다.\n"
+                                "5. [병합 금지]: 두 직선(Line) 사이에 Rotate(회전) 세그먼트가 존재한다면, 이는 방향을 바꾸기 위한 의도적인 분할이므로 병합 대상에서 제외하세요.\n\n"
+                                "모든 답변은 '한국어'로 작성하세요. 식별된 각 MERGE 예외 사항에 대해 대상 ID와 구체적인 이유를 설명해 주세요."
+                            )
+                        },
+                    ]
+                }
+            ],
+            "stream": True
+        }
+
+        async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
+                               headers={"Authorization": f"Bearer {OPENAPI_KEY}"}, json=merge_payload) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    if "[DONE]" in line: break
+                    try:
+                        content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
+                        if content:
+                            merge_text += content
+                            yield content
+                    except: continue
+
+        # --- PHASE 3: 최종 요약 ---
+        yield "[/THINKING][RESULT]"
+        summary_payload = {
+            "model": "gpt-5.4-2026-03-05",
+            "messages": [
+                {"role": "system", "content": "당신은 드론 경로 분석 전문가입니다. 핵심 결론만 아주 간결하게 리스트 형태로 요약하세요."},
+                {
+                    "role": "user",
+                    "content": f"상세 분석 결과:\n\n[SPLIT 분석]\n{split_text}\n\n[MERGE 분석]\n{merge_text}\n\n위 내용을 바탕으로 최종 결론을 '한국어'로 작성해 주세요."
+                }
+            ],
+            "stream": True
+        }
+
+        async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
+                               headers={"Authorization": f"Bearer {OPENAPI_KEY}"}, json=summary_payload) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    if "[DONE]" in line: break
+                    try:
+                        content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
+                        if content: yield content
+                    except: continue
+
 @app.post("/drone_analyze_gpt")
 async def drone_analyze_gpt(file: UploadFile = File(...), context_json: str = Form(...)):
-    """
-    드론 비행 경로 이미지와 클러스터 색상 매핑 정보를 분석하여 GPT Vision 결과를 스트리밍합니다.
-    """
     if not OPENAPI_KEY:
         raise HTTPException(status_code=500, detail="OPENAI API key not configured")
-
     try:
-        # 파일 읽기 및 base64 인코딩
         image_content = await file.read()
-        
-        # [디버깅] 이미지 저장
-        try:
-            import datetime
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            debug_save_path = f"app/images/drone/gpt_res/{timestamp}_{file.filename}"
-            with open(debug_save_path, "wb") as f:
-                f.write(image_content)
-            print(f"Debug image saved to: {debug_save_path}")
-        except Exception as e:
-            print(f"Failed to save debug image: {e}")
-
         import base64
         base64_image = base64.b64encode(image_content).decode('utf-8')
         mime_type = "image/png" if file.filename.endswith(".png") else "image/jpeg"
-        print(f"context_json : {context_json}")
-        
-        async def event_generator():
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                split_text = ""
-                merge_text = ""
-                
-                # --- PHASE 1: SPLIT 분석 ---
-                yield "[THINKING]### [SPLIT (분리) 분석 결과]\n"
-                split_payload = {
-                    "model": "gpt-5.4-2026-03-05", # 또는 사용 중인 모델명
-                    "messages": [
-                        {"role": "system", "content": "당신은 전문 항공 데이터 분석가입니다."},
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}},
-                                {
-                                    "type": "text",
-                                    "text": (
-                                        
-                                        "### 임무 (TASK 1): SPLIT (분리) 분석\n"
-                                        "1. [분석 대상]: 'Line(직선)', 'Rotate_Line(보라색)', 'Rotate_Error(주황색)' 클러스터를 모두 검토하세요.\n"
-                                        "2. 클러스터 내부에 90도 이상의 급격한 회전, 굴곡(n-자, ㄴ-자, ㄷ-자 형태), 또는 루프가 포함된 경우를 찾아내세요.\n"
-                                        "3. 실제로는 명확한 직선과 커브,회전이 섞여 있어 분리가 필요한 케이스를 엄격하게 찾아내세요.\n"
-                                        "꺾이는 지점이 같은 색으로 묶여 있다면 이는 명백한 분리 오류입니다.\n\n"
-                                        "### 부정적 제약 조건 (중요 지침)\n"
-                                        "- 이미 코너 부분이 별도의 'Rotate' 클러스터로 분리되어 색상이 바뀌어 있다면 이는 정상입니다.\n"
-                                        "- 알고리즘이 턴(Turn) 구간을 감지하지 못해 두 개의 직선 변을 하나의 색으로 이어버린 모든 케이스를 보고하세요.\n"
-                                        "### 보고 형식 (REPORT FORMAT)\n"
-                                        "모든 답변은 '한국어'로 작성하세요. 식별된 각 SPLIT 예외 사항에 대해 대상 클러스터 ID와 위 정의에 근거한 구체적인 이유를 일반 텍스트 형식으로 설명해 주세요."   )
-                                },
-                            ]
-                        }
-                    ],
-                    "stream": True
-                }
-
-                async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
-                                       headers={"Authorization": f"Bearer {OPENAPI_KEY}"}, json=split_payload) as response:
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            if "[DONE]" in line: break
-                            try:
-                                content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
-                                if content:
-                                    split_text += content
-                                    yield content
-                            except: continue
-
-                # --- PHASE 2: MERGE 분석 ---
-                yield "\n\n---\n### [MERGE (병합) 분석 결과]\n"
-                merge_payload = {
-                    "model": "gpt-5.4-2026-03-05",
-                    "messages": [
-                        {"role": "system", "content": "당신은 전문 항공 데이터 분석가입니다."},
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_image}"}},
-                                {
-                                    "type": "text",
-                                    "text": (
-                                        f"다음 드론 궤적 이미지와 컬러 매핑 정보를 분석해 주세요:\n{context_json}\n\n"
-                                        "### 임무 (TASK 2): MERGE (병합) 분석\n"
-                                        "1. [MERGE (병합)]: 동일한 성격의 경로가 아무런 이유 없이 두 개 이상의 인접한 색상으로 나뉜 경우를 찾아내세요.\n"
-                                        "2. [직선 병합]: 동일한 베이스라인 상의 인접한 두 직선이 분리된 경우 (예: [\"Line-15\", \"Line-19\"]).\n"
-                                        "3. [회전 병합]: 하나의 연속된 루프(원형)나 급격한 회전 구간이 여러 개의 Rotate 색상으로 쪼개져 있는 경우 (예: [\"Rotate-10\", \"Rotate-12\", \"Rotate-14\"]).\n"
-                                        "4. 성격이 다른 구간(직선과 회전)이 분리된 것은 정상입니다. 오직 '동일한 동작'이 불필요하게 색이 변한 경우만 보고하세요.\n\n"
-                                        "모든 답변은 '한국어'로 작성하세요. 식별된 각 MERGE 예외 사항에 대해 대상 ID와 구체적인 이유를 설명해 주세요."
-                                    )
-                                },
-                            ]
-                        }
-                    ],
-                    "stream": True
-                }
-
-                async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
-                                       headers={"Authorization": f"Bearer {OPENAPI_KEY}"}, json=merge_payload) as response:
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            if "[DONE]" in line: break
-                            try:
-                                content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
-                                if content:
-                                    merge_text += content
-                                    yield content
-                            except: continue
-
-                # --- PHASE 3: 최종 요약 (CONCISE CONCLUSION) ---
-                yield "[/THINKING][RESULT]"
-                summary_payload = {
-                    "model": "gpt-5.4-2026-03-05",
-                    "messages": [
-                        {"role": "system", "content": "당신은 드론 경로 분석 전문가입니다. 상세 분석 내용을 바탕으로 사용자가 즉시 확인하고 조치해야 할 핵심 결론(분리/병합 항목)만 아주 간결하고 명확하게 리스트 형태로 요약하세요."},
-                        {
-                            "role": "user",
-                            "content": f"상세 분석 결과:\n\n[SPLIT 분석]\n{split_text}\n\n[MERGE 분석]\n{merge_text}\n\n위 내용을 바탕으로 최종 결론을 '한국어'로 작성해 주세요."
-                        }
-                    ],
-                    "stream": True
-                }
-
-                async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
-                                       headers={"Authorization": f"Bearer {OPENAPI_KEY}"}, json=summary_payload) as response:
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            if "[DONE]" in line: break
-                            try:
-                                content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
-                                if content: yield content
-                            except: continue
-
-        return StreamingResponse(event_generator(), media_type="text/plain")
-
+        return StreamingResponse(get_drone_analysis_stream(base64_image, context_json, mime_type), media_type="text/plain")
     except Exception as e:
-        print(f"Error in drone_analyze_gpt: {e}")
         return JSONResponse(status_code=500, content={"error": str(e)})
-
-
 
 
 
@@ -526,7 +509,8 @@ async def drone_analyze(file: UploadFile = File(...)):
         
 
         try:
-            df = pd.read_csv(target_file, header=None)
+            df_orig = pd.read_csv(target_file, header=None)
+            df = df_orig.copy()
             
             # Timestamp 컬럼 찾기 및 데이터 시프트 처리
             valid_start_idx = -1
@@ -646,65 +630,14 @@ async def drone_analyze(file: UploadFile = File(...)):
             
             turn_label = np.argmax(state_means)
 
-            # try:
-            #     from hmmlearn import hmm
-            #     print("Using GaussianHMM for segmentation...")
-                
-            #     # 2 states: Straight vs Turn
-            #     # covariance_type="diag" is generally robust for this
-            #     model = hmm.GaussianHMM(n_components=2, covariance_type="diag", n_iter=100, random_state=42)
-            #     model.fit(X_scaled)
-                
-            #     # Predict states
-            #     df['State_Raw'] = model.predict(X_scaled)
-                
-            #     # Identify which state is 'Turn'
-            #     # Check the mean of features for each state. The state with higher values is likely 'Turn'.
-            #     state_means = []
-            #     for s in range(2):
-            #         # Average feature value for this state
-            #         state_mean = np.mean(X_scaled[df['State_Raw'] == s], axis=0)
-            #         state_means.append(np.sum(state_mean)) # Sum of standardized features
-                
-            #     turn_label = np.argmax(state_means)
-                
-            # except ImportError:
-            #     print("hmmlearn not found, falling back to K-Means...")
-            #     # Fallback to K-Means if hmmlearn is missing
-            #     kmeans = KMeans(n_clusters=2, random_state=42, n_init=10)
-            #     df['State_Raw'] = kmeans.fit_predict(X_scaled)
-                
-            #     cluster_centers = kmeans.cluster_centers_
-            #     cluster_magnitudes = np.sum(cluster_centers, axis=1)
-            #     turn_label = np.argmax(cluster_magnitudes)
-            
-            # 0: Straight, 1: Turn 으로 라벨 정규화
             df['State'] = df['State_Raw'].apply(lambda x: 1 if x == turn_label else 0)
             
-            # [DEBUG] RAW Clustering Visualization Mode
-            # Bypassing complex post-processing to see raw HMM/KMeans output.
-            
-            # 4. Smoothing (노이즈 제거) - Skipped
-            # smooth_window = 10
-            # df['State_Smooth'] = df['State'].rolling(window=smooth_window, center=True).mean()
-            # df['State_Smooth'] = df['State_Smooth'].apply(lambda x: 1 if x > 0.5 else 0).fillna(0).astype(int)
             df['State_Smooth'] = df['State'] # Use Raw State
             
             # 5. Segment Identification & Merging (구간 나누기 및 병합) - Simplified
             df['Segment_Change'] = df['State_Smooth'].diff().fillna(0).abs()
             # Simple cumulative sum to create unique IDs for every state change
             df['Final_Segment_ID'] = df['Segment_Change'].cumsum().astype(int)
-
-            # 6. Rotate_Error 판별: PCA 선형성 + Yaw 총 변화량 복합 판단
-            #
-            #  [문제] 130° 꺾임(헤어핀/V자) 경로는 두 팔이 반대 방향이라
-            #         PCA 1st 성분이 높게 나와 직선으로 오판될 수 있음.
-            #
-            #  [해결] GPS 선형성이 높아도 Yaw 총 변화량이 크면 실제 회전으로 인정.
-            #         → 두 조건이 모두 성립해야 Rotate_Error:
-            #           (1) PCA 선형성 높음 (GPS 경로가 직선형)
-            #           (2) Yaw 총 변화 작음 (방향이 거의 안 바뀜)
-            #
             # State_Final: 0=Straight, 1=Rotate, 3=Rotate_Error
             from sklearn.decomposition import PCA as _PCA
 
@@ -772,16 +705,6 @@ async def drone_analyze(file: UploadFile = File(...)):
             # 서브 클러스터링으로 인해 State_Final이 쪼개졌으므로, Final_Segment_ID를 새로 부여합니다.
             df['Segment_Change_Final'] = (df['State_Final'] != df['State_Final'].shift(1)).astype(int)
             df['Final_Segment_ID'] = df['Segment_Change_Final'].cumsum().astype(int)
-
-
-            # 7. Line ↔ Rotate_Error/Rotate_Line 체인 병합
-            #    실제 Rotate(1)로 끊기지 않는 한, {Line(0), Rotate_Line(2), Rotate_Error(3)} 인접 구간들을
-            #    하나의 "run"으로 묶어서 병합.
-            #
-            #    병합 규칙:
-            #      - run 내(1로 끊기기 전까지의 구간)에 Line(0)이 하나라도 존재한다면,
-            #        그 run 안에 있는 모든 2와 3은 사실상 Line의 연장선이므로 모두 Line(0)으로 통합한다.
-            #      - 만약 run 안에 Line(0)이 아예 없다면 (예: 부분적으로 2나 3만 있는 경우) 그대로 둔다.
 
             # 세그먼트 순서 추출 (원본 인덱스 기반 시간 순 정렬)
             seg_order_df = (
@@ -890,14 +813,39 @@ async def drone_analyze(file: UploadFile = File(...)):
                     '#FF69B4', # Hot Pink
                     '#1E90FF', # Dodger Blue
                     '#DC143C', # Crimson
+                    '#9400D3', # Violet
+                    '#FF6600', # OrangeRed
+                    '#008080', # Teal
+                    '#800000', # Maroon
+                    '#808000', # Olive
+                    '#000080', # Navy
+                    '#32CD32', # LimeGreen
+                    '#FF7F50', # Coral
+                    '#BA55D3', # MediumOrchid
+                    '#20B2AA', # LightSeaGreen
                 ]
                 
                 sorted_seg_ids = sorted(df[df['Final_Segment_ID'] != -1]['Final_Segment_ID'].unique())
                 
+                # 색상 이름 매핑 (VLM 최적화용)
+                hex_to_color_name = {
+                    '#FF0000': 'Red', '#00FF00': 'Lime', '#0000FF': 'Blue',
+                    '#FFFF00': 'Yellow', '#FF00FF': 'Magenta', '#00FFFF': 'Cyan',
+                    '#FF8000': 'Orange', '#0080FF': 'Azure', '#FF0080': 'DeepPink',
+                    '#80FF00': 'Chartreuse', '#00FF80': 'SpringGreen', '#FF4040': 'LightRed',
+                    '#4040FF': 'LightBlue', '#FFD700': 'Gold', '#ADFF2F': 'GreenYellow',
+                    '#FF69B4': 'HotPink', '#1E90FF': 'DodgerBlue', '#DC143C': 'Crimson',
+                    '#9400D3': 'Violet', '#FF6600': 'OrangeRed',
+                    '#008080': 'Teal', '#800000': 'Maroon', '#808000': 'Olive',
+                    '#000080': 'Navy', '#32CD32': 'LimeGreen', '#FF7F50': 'Coral',
+                    '#BA55D3': 'MediumOrchid', '#20B2AA': 'LightSeaGreen'
+                }
+                
+                cluster_color_map = {} # VML 분석을 위한 요약 맵
+
                 for seg_id in sorted_seg_ids:
                     group = df[df['Final_Segment_ID'] == seg_id]
-                    coords = group[['Latitude', 'Longitude']].values.tolist()
-
+                    
                     # State_Final 기준으로 세그먼트 타입 결정
                     # 0=Straight, 1=Rotate, 2=Rotate_Line, 3=Rotate_Error
                     seg_state_final = group['State_Final'].iloc[0] if 'State_Final' in group.columns else group['State_Smooth'].iloc[0]
@@ -905,33 +853,39 @@ async def drone_analyze(file: UploadFile = File(...)):
                     if seg_state_final == 0:
                         type_str = "Straight"
                         label_prefix = "Line"
-                        color_idx = seg_id % len(colors)
-                        color = colors[color_idx]
+                        color = colors[(seg_id - 1) % len(colors)]
                         weight = 3
                         opacity = 0.8
                         dash_array = None
                     elif seg_state_final == 1:
                         type_str = "Rotate"
                         label_prefix = "Rotate"
-                        color_idx = seg_id % len(colors)
-                        color = colors[color_idx]
+                        color = colors[(seg_id - 1) % len(colors)]
                         weight = 5
                         opacity = 0.9
                         dash_array = '5, 5'
                     elif seg_state_final == 2:
                         type_str = "Rotate_Line"
                         label_prefix = "Rotate_Line"
-                        color = '#9400D3'  # 눈에 띄는 보라색으로 설정
+                        color = '#9400D3'  # Violet
                         weight = 5
                         opacity = 0.9
-                        dash_array = '10, 5'  # 점선으로 구분
+                        dash_array = '10, 5'
                     else:  # state == 3: Rotate_Error
                         type_str = "Rotate_Error"
                         label_prefix = "Rotate_Error"
-                        color = '#FF6600'  # 눈에 띄는 주황색으로 고정
+                        color = '#FF6600'  # OrangeRed
                         weight = 5
                         opacity = 0.9
-                        dash_array = '10, 5'  # 더 긴 점선으로 구분
+                        dash_array = '10, 5'
+
+                    # VLM용 컬러 맵 업데이트
+                    full_label = f"{label_prefix}-{seg_id}"
+                    c_name = hex_to_color_name.get(color, color)
+                    if c_name not in cluster_color_map:
+                        cluster_color_map[c_name] = full_label
+                    else:
+                        cluster_color_map[c_name] += f", {full_label}"
 
                     label_text = f"{label_prefix}-{seg_id}"
                     
@@ -1029,8 +983,9 @@ async def drone_analyze(file: UploadFile = File(...)):
                     file_name = f"{label_prefix}-{seg_id}.csv"
                     save_path = os.path.join(output_split_dir, file_name)
 
-                    # Generate CSV content
-                    csv_content = group.to_csv(index=True, header=True)
+                    # Generate CSV content (원본 데이터 보존)
+                    group_orig = df_orig.loc[group.index]
+                    csv_content = group_orig.to_csv(index=False, header=False)
 
                     # Save for record
                     with open(save_path, "w", encoding='utf-8') as f:
@@ -1047,53 +1002,34 @@ async def drone_analyze(file: UploadFile = File(...)):
                     html_content = f.read()
 
                 # --- 8. [새 기능] Matplotlib을 이용한 단순화된 시각화 이미지 생성 ---
+                img_base64 = ""
                 try:
                     import matplotlib.pyplot as plt
                     import io
-                    import json
-
                     plt.figure(figsize=(12, 8))
                     plt.style.use('default')
                     
                     # 배경 경로
                     plt.plot(df['Longitude'], df['Latitude'], color='#cccccc', linewidth=1, alpha=0.5, label="Original Path")
                     
-                    # 색상 및 세그먼트 매핑 정보 생성
-                    hex_to_name = {
-                        '#ff0000': 'red', '#00ff00': 'lime', '#0000ff': 'blue', '#ffff00': 'yellow',
-                        '#ff00ff': 'magenta', '#00ffff': 'cyan', '#ff8000': 'orange', '#0080ff': 'azure',
-                        '#ff0080': 'pink', '#80ff00': 'chartreuse', '#00ff80': 'spring_green', '#ff4040': 'light_red',
-                        '#4040ff': 'light_blue', '#ffd700': 'gold', '#adff2f': 'green_yellow', '#ff69b4': 'hot_pink',
-                        '#1e90ff': 'dodger_blue', '#dc143c': 'crimson', '#9400d3': 'darkviolet', '#ff6600': 'vivid_orange'
-                    }
-                    cluster_color_map = {}
-
                     # 각 세그먼트별 플로팅
                     for seg_id in sorted_seg_ids:
                         group = df[df['Final_Segment_ID'] == seg_id]
                         seg_state_final = group['State_Final'].iloc[0] if 'State_Final' in group.columns else group['State_Smooth'].iloc[0]
 
-                        # 색상 설정 (Folium과 동일 로직)
+                        # 색상 및 스타일 설정 (Folium과 동일한 로직)
                         if seg_state_final == 0:
-                            c = colors[(seg_id % len(colors))].lower()
+                            c = colors[(seg_id - 1) % len(colors)]
                             lw, ls = 2, '-'
                         elif seg_state_final == 1:
-                            c = colors[(seg_id % len(colors))].lower()
+                            c = colors[(seg_id - 1) % len(colors)]
                             lw, ls = 3, '--'
                         elif seg_state_final == 2:
-                            c, lw, ls = '#9400d3', 3, ':'
+                            c, lw, ls = '#9400D3', 3, ':'
                         else:
-                            c, lw, ls = '#ff6600', 3, '-.'
+                            c, lw, ls = '#FF6600', 3, '-.'
 
-                        # 컬러맵 업데이트
-                        color_name = hex_to_name.get(c, c)
-                        cluster_key = f"cluster_{seg_id}"
-                        if color_name in cluster_color_map:
-                            cluster_color_map[color_name] += f", {cluster_key}"
-                        else:
-                            cluster_color_map[color_name] = cluster_key
-
-                        # 불연속 구간 처리 및 플로팅
+                        # 불연속 구간 처리
                         indices = group.index.values
                         if len(indices) > 0:
                             idx_diff = np.diff(indices)
@@ -1108,91 +1044,71 @@ async def drone_analyze(file: UploadFile = File(...)):
                     plt.axis('off')
                     plt.tight_layout()
                     
+                    # 이미지를 base64로 변환
                     buf = io.BytesIO()
                     plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
                     buf.seek(0)
                     img_base64 = base64.b64encode(buf.read()).decode('utf-8')
                     plt.close()
-                    
-                    # HTML에 AI 분석용 패널 삽입
-                    img_html = f"""
-                    <div id="ai_analyze_panel" style="position: fixed; bottom: 10px; right: 10px; width: 420px; 
-                                background-color: rgba(255,255,255,0.95); padding: 10px; border: 2px solid #333; z-index: 10000; box-shadow: 0 0 15px rgba(0,0,0,0.3); font-family: sans-serif;">
-                        <h5 style="margin:0 0 10px 0; border-bottom: 1px solid #ccc; padding-bottom: 5px;">AI Analyze Overview (VLM Optimized)</h5>
-                        <img id="vlm_simplified_img" src="data:image/png;base64,{img_base64}" style="width:100%; height:auto; border: 1px solid #eee;" />
-                        <div style="font-size: 8.5pt; color: #333; margin-top: 10px; line-height: 1.4;">
-                            <strong>Trajectory Styles:</strong><br/>
-                            <span style="color:red;">━</span> Solid: Straight Line | <span style="color:blue;">---</span> Dash: Rotating Turn<br/>
-                            <span style="color:#9400D3;">...</span> Violet Dot: Rotate_Line | <span style="color:#FF6600;">-.-</span> Orange Dash-Dot: Error
-                        </div>
-                        <div id="vlm_color_mapping" style="font-size: 8pt; color: #555; margin-top: 5px; background: #f9f9f9; padding: 5px; border-radius: 3px; display:none;">
-                            {json.dumps(cluster_color_map)}
-                        </div>
-                        <div style="font-size: 8pt; color: #555; margin-top: 5px; background: #f9f9f9; padding: 5px; border-radius: 3px;">
-                            <strong>Color Mapping for AI:</strong><br/>
-                            <pre style="margin:0; white-space: pre-wrap;">{json.dumps(cluster_color_map, indent=1)}</pre>
-                        </div>
-                    </div>
-                    """
-                    if "</body>" in html_content:
-                        html_content = html_content.replace("</body>", f"{img_html}</body>")
-                    else:
-                        html_content += img_html
-                        
                 except Exception as plt_e:
                     print(f"Matplotlib plotting error: {plt_e}")
 
-                # HTML에 Download Panel 추가
-                if csv_links:
-                    download_panel = f"""
-                    <div style="position: fixed; top: 10px; right: 10px; width: 250px; max-height: 80vh; overflow-y: auto; 
-                                background-color: white; padding: 10px; border: 2px solid #ccc; z-index: 9999; box-shadow: 0 0 10px rgba(0,0,0,0.2);">
-                        <h4>Segment CSV Downloads</h4>
-                        {''.join(csv_links)}
+                # --- 9. [새 기능] AI VLM 분석 자동 통합 ---
+                ai_full_text = ""
+                if OPENAPI_KEY:
+                    print("Starting integrated AI analysis...")
+                    async for chunk in get_drone_analysis_stream(img_base64, json.dumps(cluster_color_map, indent=1)):
+                        # 스트리밍 태그 제거 후 텍스트만 취합
+                        if chunk not in ("[THINKING]", "[/THINKING][RESULT]"):
+                            ai_full_text += chunk
+                
+                # --- 사이드바 레이아웃 구성 ---
+                sidebar_html = f"""
+                <div id="sidebar" style="position: fixed; top: 0; right: 0; width: 400px; height: 100vh; 
+                            background-color: white; border-left: 2px solid #ccc; z-index: 10000; 
+                            overflow-y: auto; padding: 20px; box-sizing: border-box; font-family: sans-serif; box-shadow: -2px 0 10px rgba(0,0,0,0.1);">
+                    <h3 style="margin-top: 0; border-bottom: 2px solid #333; padding-bottom: 10px;">Analysis Report</h3>
+                    
+                    <div id="ai_report_section" style="margin-bottom: 20px; background: #fffbe6; padding: 15px; border: 1px solid #ffe58f; border-radius: 8px;">
+                        <h4 style="margin: 0 0 10px 0; color: #856404;">🤖 AI Analysis Report</h4>
+                        <div id="ai_report_content" style="font-size: 9pt; line-height: 1.6; white-space: pre-wrap;">
+                            {ai_full_text if ai_full_text else "AI 분석 키가 설정되지 않았거나 분석에 실패했습니다."}
+                        </div>
                     </div>
-                    """
-                    if "</body>" in html_content:
-                        html_content = html_content.replace("</body>", f"{download_panel}</body>")
-                    else:
-                        html_content += download_panel
+
+                    <div id="download_section">
+                        <h4>Segment CSV Downloads</h4>
+                        <div style="max-height: 200px; overflow-y: auto; border: 1px solid #eee; padding: 10px; border-radius: 5px;">
+                            {''.join(csv_links)}
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 20px; border-top: 2px solid #eee; padding-top: 15px;">
+                        <h4 style="margin:0 0 10px 0;">AI Analyze Overview (Static View)</h4>
+                        <img src="data:image/png;base64,{img_base64}" style="width:100%; height:auto; border: 1px solid #eee; border-radius: 5px;" />
+                        <div style="font-size: 8pt; color: #555; margin-top: 10px; background: #f9f9f9; padding: 8px; border-radius: 5px; border: 1px solid #eee;">
+                            <strong>Color Mapping for AI:</strong><br/>
+                            <pre id="vlm_color_mapping" style="white-space: pre-wrap; margin:0;">{json.dumps(cluster_color_map, indent=1)}</pre>
+                        </div>
+                    </div>
+                </div>
+                <style>
+                    .folium-map {{ width: calc(100% - 400px) !important; height: 100vh !important; position: absolute !important; left: 0 !important; top: 0 !important; }}
+                    #ai_report_content h3 {{ font-size: 11pt; margin: 15px 0 5px 0; border-bottom: 1px solid #ddd; }}
+                    @media (max-width: 1000px) {{
+                        #sidebar {{ width: 100%; height: auto; position: relative; border-left: none; border-top: 2px solid #ccc; }}
+                        .folium-map {{ width: 100% !important; height: 50vh !important; position: relative !important; }}
+                    }}
+                </style>
+                """
+                
+                if "</body>" in html_content:
+                    html_content = html_content.replace("</body>", f"{sidebar_html}</body>")
+                else:
+                    html_content += sidebar_html
 
                 return HTMLResponse(content=html_content)
                 
         except Exception as e:
             print(f"오류 발생: {e}")
             return JSONResponse(status_code=500, content={"error": str(e)})
-
-@app.post("/drone_analyze_gpt")
-async def drone_analyze_gpt(file: UploadFile = File(...), context_json: str = Form(...)):
-    import httpx
-    if not os.getenv("OPENAPI_KEY"):
-        raise HTTPException(status_code=500, detail="OPENAI API key not configured")
-    
-    image_content = await file.read()
-    base64_image = base64.b64encode(image_content).decode('utf-8')
-    
-    async def event_generator():
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            payload = {
-                "model": "gpt-4o",
-                "messages": [
-                    {"role": "system", "content": "당신은 전문 항공 데이터 분석가입니다. 2D 궤적 이미지를 기반으로 세분화 품질을 평가하세요."},
-                    {"role": "user", "content": [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}},
-                        {"type": "text", "text": f"분석 정보:\n{context_json}\n\n명백한 실패 사례(MERGE/SPLIT)만 보고하세요. 한국어로 답변하세요."}
-                    ]}
-                ],
-                "stream": True
-            }
-            async with client.stream("POST", "https://api.openai.com/v1/chat/completions",
-                                   headers={"Authorization": f"Bearer {os.getenv('OPENAPI_KEY')}"},
-                                   json=payload) as response:
-                async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        if "[DONE]" in line: break
-                        try:
-                            content = json.loads(line[6:])["choices"][0].get("delta", {}).get("content", "")
-                            if content: yield content
-                        except: continue
-    return StreamingResponse(event_generator(), media_type="text/plain")
-
