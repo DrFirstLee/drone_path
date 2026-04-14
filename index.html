@@ -848,13 +848,27 @@
                     aiResultSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 }
 
-                // 1. iframe 안의 Simplified View 이미지에서 base64 추출
-                const iframe = document.getElementById('resultFrame');
-                const iframeDoc = iframe.contentDocument;
-                const simplifiedImg = iframeDoc.querySelector('img[src^="data:image/png;base64,"]');
+                // 1. 추출된 AI Overview 패널에서 이미지 및 매핑 데이터 가져오기
+                // (아이프레임 내 사이드바가 제거되었으므로 메인 문서의 aiOverviewPanel에서 확인)
+                const overviewPanel = document.getElementById('aiOverviewPanel');
+                let simplifiedImg = null;
+                let mappingEl = null;
+
+                if (overviewPanel) {
+                    simplifiedImg = overviewPanel.querySelector('img[src^="data:image/png;base64,"]');
+                    mappingEl = overviewPanel.querySelector('#vlm_color_mapping');
+                }
+
+                // Fallback: 아이프레임 확인 (만약 사이드바가 남아있는 경우를 대비)
+                if (!simplifiedImg || !mappingEl) {
+                    const iframe = document.getElementById('resultFrame');
+                    const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (!simplifiedImg) simplifiedImg = iframeDoc.querySelector('img[src^="data:image/png;base64,"]');
+                    if (!mappingEl) mappingEl = iframeDoc.getElementById('vlm_color_mapping');
+                }
 
                 if (!simplifiedImg) {
-                    throw new Error("단순화 이미지를 찾을 수 없습니다. 분석을 먼저 실행해주세요.");
+                    throw new Error("분석용 이미지를 찾을 수 없습니다. 지도가 완전히 로드될 때까지 기다려주세요.");
                 }
 
                 const dataUrl = simplifiedImg.src; // "data:image/png;base64,..."
@@ -868,16 +882,15 @@
                 }
                 const blob = new Blob([byteArray], { type: 'image/png' });
 
-                // 2. 백엔드에서 제공한 클러스터 색상 매핑 정보 가져오기
-                let clusterColorMap = {};
-                const mappingEl = iframeDoc.getElementById('vlm_color_mapping');
+                // 2. 클러스터 색상 매핑 정보 가져오기
                 if (!mappingEl) {
-                    throw new Error("AI 분석용 매핑 데이터(#vlm_color_mapping)를 찾을 수 없습니다. 분석을 다시 실행해주세요.");
+                    throw new Error("AI 분석용 매핑 데이터(#vlm_color_mapping)를 찾을 수 없습니다.");
                 }
 
+                let clusterColorMap = {};
                 try {
                     clusterColorMap = JSON.parse(mappingEl.innerText);
-                    console.log("Using pre-calculated color mapping from backend:", clusterColorMap);
+                    console.log("Using color mapping for AI:", clusterColorMap);
                 } catch (e) {
                     throw new Error("매핑 데이터 형식이 올바르지 않습니다: " + e.message);
                 }
