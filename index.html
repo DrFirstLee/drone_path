@@ -924,13 +924,11 @@
                     if (fullText.includes("[RESULT]")) {
                         currentMode = "RESULT";
                         if (aiStaticResultText) aiStaticResultText.style.display = 'block';
+                        // Keep result visible
                     }
 
                     // Render content based on mode
                     const parts = fullText.split(/\[THINKING\]|\[\/THINKING\]|\[RESULT\]/);
-
-                    // parts[1] is thinking (usually)
-                    // parts[2] is result (usually)
 
                     let thinkingContent = "";
                     let resultContent = "";
@@ -939,6 +937,10 @@
                     let tempText = fullText;
                     if (tempText.includes("[THINKING]")) {
                         let thinkPart = tempText.split("[THINKING]")[1] || "";
+                        if (aiThinkingContainer) {
+                            aiThinkingContainer.style.display = 'block';
+                            if (currentMode === "THINKING") toggleThinking(true); // Open while thinking
+                        }
                         if (thinkPart.includes("[/THINKING]")) {
                             thinkingContent = thinkPart.split("[/THINKING]")[0];
                             let rest = thinkPart.split("[/THINKING]")[1] || "";
@@ -960,8 +962,8 @@
                     }
                 }
 
-                // After streaming finishes, collapse thinking if you want
-                // toggleThinking(false);
+                // After streaming finishes, collapse thinking and show final result
+                toggleThinking(false);
 
             } catch (err) {
                 console.error("AI Analyze error:", err);
@@ -1207,51 +1209,17 @@
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(htmlContent, 'text/html');
                 
-                // 1. Extract AI Report
-                const aiReportEl = doc.getElementById('ai_report_content');
-                let hasBackendAI = false;
-                if (aiReportEl && aiReportEl.textContent.trim().length > 10) {
-                    const aiResultSection = document.getElementById('aiResultSection');
-                    const aiStaticResultText = document.getElementById('aiStaticResultText');
-                    const aiThinkingContainer = document.getElementById('aiThinkingContainer');
-                    const aiThinkingText = document.getElementById('aiThinkingText');
-
-                    if (aiResultSection && aiStaticResultText) {
-                        aiResultSection.style.display = 'block';
-                        
-                        let rawText = aiReportEl.textContent;
-                        let thinkingContent = "";
-                        let resultContent = "";
-
-                        // Parse markers from backend-integrated AI
-                        if (rawText.includes("[THINKING]")) {
-                            let thinkPart = rawText.split("[THINKING]")[1] || "";
-                            if (thinkPart.includes("[/THINKING]")) {
-                                thinkingContent = thinkPart.split("[/THINKING]")[0];
-                                let rest = thinkPart.split("[/THINKING]")[1] || "";
-                                if (rest.includes("[RESULT]")) {
-                                    resultContent = rest.split("[RESULT]")[1] || "";
-                                }
-                            } else {
-                                thinkingContent = thinkPart;
-                            }
-                        } else {
-                            resultContent = rawText;
-                        }
-
-                        if (aiThinkingContainer && thinkingContent) {
-                            aiThinkingContainer.style.display = 'block';
-                            aiThinkingText.innerHTML = thinkingContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                            // Start collapsed as requested
-                            toggleThinking(false);
-                        }
-
-                        if (resultContent) {
-                            aiStaticResultText.style.display = 'block';
-                            aiStaticResultText.innerHTML = resultContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-                        }
-                        hasBackendAI = true;
-                    }
+                // 1. Reset AI Sections for new analysis
+                const aiResultSection = document.getElementById('aiResultSection');
+                const aiStaticResultText = document.getElementById('aiStaticResultText');
+                const aiThinkingContainer = document.getElementById('aiThinkingContainer');
+                const aiThinkingText = document.getElementById('aiThinkingText');
+                
+                if (aiResultSection) {
+                    aiResultSection.style.display = 'none';
+                    if (aiStaticResultText) aiStaticResultText.innerHTML = "";
+                    if (aiThinkingText) aiThinkingText.innerHTML = "";
+                    if (aiThinkingContainer) aiThinkingContainer.style.display = 'none';
                 }
 
                 // 2. Extract CSV Downloads
@@ -1290,9 +1258,6 @@
 
                 htmlContent = "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
 
-                // Store whether we have backend AI for the onload trigger
-                resultFrame.dataset.hasBackendAI = hasBackendAI;
-
                 // Inject the HTML directly into the iframe
                 resultFrame.srcdoc = htmlContent;
                 resultContainer.style.display = 'block';
@@ -1302,12 +1267,10 @@
                     extractClustersFromPanel();
                     setupMapInteractions();
                     
-                    // Automatically trigger manual AI analysis ONLY if backend didn't provide it
-                    if (resultFrame.dataset.hasBackendAI !== "true") {
-                        setTimeout(() => {
-                            performAIAnalyze();
-                        }, 500);
-                    }
+                    // Always trigger streaming AI analysis after map loads
+                    setTimeout(() => {
+                        performAIAnalyze();
+                    }, 500);
                 };
 
                 // Scroll to result

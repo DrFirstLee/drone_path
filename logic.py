@@ -1053,12 +1053,8 @@ async def drone_analyze(file: UploadFile = File(...)):
                 except Exception as plt_e:
                     print(f"Matplotlib plotting error: {plt_e}")
 
-                # --- 9. [새 기능] AI VLM 분석 자동 통합 ---
-                ai_full_text = ""
-                if OPENAPI_KEY:
-                    print("Starting integrated AI analysis...")
-                    async for chunk in get_drone_analysis_stream(img_base64, json.dumps(cluster_color_map, indent=1)):
-                        ai_full_text += chunk
+                # --- 9. [새 기능] AI VLM 분석 자동 통합 (분할 - 프론트엔드에서 스트리밍 호출) ---
+                ai_full_text = "지도가 로드되었습니다. 잠시 후 AI 분석이 시작됩니다..."
                 
                 # --- 사이드바 레이아웃 구성 ---
                 sidebar_html = f"""
@@ -1070,7 +1066,7 @@ async def drone_analyze(file: UploadFile = File(...)):
                     <div id="ai_report_section" style="margin-bottom: 20px; background: #fffbe6; padding: 15px; border: 1px solid #ffe58f; border-radius: 8px;">
                         <h4 style="margin: 0 0 10px 0; color: #856404;">🤖 AI Analysis Report</h4>
                         <div id="ai_report_content" style="font-size: 9pt; line-height: 1.6; white-space: pre-wrap;">
-                            {ai_full_text if ai_full_text else "AI 분석 키가 설정되지 않았거나 분석에 실패했습니다."}
+                            {ai_full_text}
                         </div>
                     </div>
 
