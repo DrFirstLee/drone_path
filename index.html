@@ -268,6 +268,11 @@
         <div class="result-container" id="resultContainer">
             <iframe id="resultFrame"></iframe>
         </div>
+
+        <!-- Containers for results and controls -->
+        <div id="aiOverviewPanel" class="upload-card" style="display: none; text-align: left; margin-top: 2rem;"></div>
+        <div id="mergePanelContainer" class="upload-card" style="display: none; text-align: left; margin-top: 2rem;"></div>
+        <div id="externalDownloadPanel" class="upload-card" style="display: none; text-align: left; margin-top: 2rem; max-height: 400px; overflow-y: auto;"></div>
     </div>
 
     <script>
@@ -283,14 +288,8 @@
         let splitPreviewLayer = null;
 
         function initMergePanel() {
-            let mergePanel = document.getElementById('mergePanelContainer');
-            if (!mergePanel) {
-                mergePanel = document.createElement('div');
-                mergePanel.id = 'mergePanelContainer';
-                mergePanel.className = 'upload-card';
-                mergePanel.style.textAlign = 'left';
-                mergePanel.style.marginTop = '2rem';
-                mergePanel.style.display = 'none';
+            const mergePanel = document.getElementById('mergePanelContainer');
+            if (mergePanel && mergePanel.innerHTML === '') {
                 mergePanel.innerHTML = `
                     <div id="mergeSection" style="margin-bottom: 2rem;">
                         <h3 style="margin-top: 0; margin-bottom: 1rem; color: #111827;">🔗 클러스터 병합 (Merge)</h3>
@@ -325,13 +324,10 @@
                         </div>
                     </div>
                 `;
-                resultContainer.parentNode.insertBefore(mergePanel, resultContainer.nextSibling);
 
                 document.getElementById('mergeBtn').addEventListener('click', performMerge);
                 document.getElementById('splitBtn').addEventListener('click', performSplit);
                 document.getElementById('renameBtn').addEventListener('click', performRename);
-
-                // Add split preview listeners
                 document.getElementById('splitPointRange').addEventListener('input', updateSplitPreview);
                 document.getElementById('splitSelect').addEventListener('change', updateSplitPreview);
             }
@@ -1260,39 +1256,24 @@
 
                 // 2. Extract CSV Downloads
                 const downloadSection = doc.getElementById('download_section');
-                let externalPanel = document.getElementById('externalDownloadPanel');
-                if (externalPanel) externalPanel.style.display = 'none';
+                const externalPanel = document.getElementById('externalDownloadPanel');
+                if (externalPanel) {
+                    externalPanel.style.display = 'none';
+                    if (downloadSection) {
+                        externalPanel.innerHTML = downloadSection.innerHTML;
+                        externalPanel.style.display = 'block';
+                    }
+                }
 
-                if (downloadSection) {
-                    if (!externalPanel) {
-                        externalPanel = document.createElement('div');
-                        externalPanel.id = 'externalDownloadPanel';
-                        externalPanel.className = 'upload-card';
-                        externalPanel.style.textAlign = 'left';
-                        externalPanel.style.maxHeight = '500px'; // Increased to fit image
-                        externalPanel.style.overflowY = 'auto';
-                        externalPanel.style.marginTop = '2rem';
-                        resultContainer.parentNode.insertBefore(externalPanel, resultContainer.nextSibling);
-                    }
-                    externalPanel.innerHTML = downloadSection.innerHTML;
-                    
-                    // 3. Extract Static View and Color Mapping Overview
-                    const overviewHeader = Array.from(doc.querySelectorAll('h4')).find(h => h.textContent.includes('AI Analyze Overview'));
+                // 3. Extract Static View and Color Mapping Overview
+                const overviewHeader = Array.from(doc.querySelectorAll('h4')).find(h => h.textContent.includes('AI Analyze Overview'));
+                const overviewPanel = document.getElementById('aiOverviewPanel');
+                if (overviewPanel) {
+                    overviewPanel.style.display = 'none';
                     if (overviewHeader) {
-                        const overviewDiv = overviewHeader.parentElement;
-                        const hr = document.createElement('hr');
-                        hr.style.margin = '1.5rem 0';
-                        hr.style.border = '0';
-                        hr.style.borderTop = '1px solid #e5e7eb';
-                        externalPanel.appendChild(hr);
-                        
-                        // Extract and append the overview content
-                        const overviewContent = document.createElement('div');
-                        overviewContent.innerHTML = overviewDiv.innerHTML;
-                        externalPanel.appendChild(overviewContent);
+                        overviewPanel.innerHTML = overviewHeader.parentElement.innerHTML;
+                        overviewPanel.style.display = 'block';
                     }
-                    
-                    externalPanel.style.display = 'block';
                 }
 
                 // 4. Clean up the HTML to be shown in the iframe (remove redundant sidebar)
