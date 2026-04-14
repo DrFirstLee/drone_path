@@ -1058,9 +1058,7 @@ async def drone_analyze(file: UploadFile = File(...)):
                 if OPENAPI_KEY:
                     print("Starting integrated AI analysis...")
                     async for chunk in get_drone_analysis_stream(img_base64, json.dumps(cluster_color_map, indent=1)):
-                        # 스트리밍 태그 제거 후 텍스트만 취합
-                        if chunk not in ("[THINKING]", "[/THINKING][RESULT]"):
-                            ai_full_text += chunk
+                        ai_full_text += chunk
                 
                 # --- 사이드바 레이아웃 구성 ---
                 sidebar_html = f"""

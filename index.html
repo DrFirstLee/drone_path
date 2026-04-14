@@ -1217,11 +1217,43 @@
                 if (aiReportEl && aiReportEl.textContent.trim().length > 10) {
                     const aiResultSection = document.getElementById('aiResultSection');
                     const aiStaticResultText = document.getElementById('aiStaticResultText');
+                    const aiThinkingContainer = document.getElementById('aiThinkingContainer');
+                    const aiThinkingText = document.getElementById('aiThinkingText');
+
                     if (aiResultSection && aiStaticResultText) {
                         aiResultSection.style.display = 'block';
-                        aiStaticResultText.style.display = 'block';
-                        // Keep the backend-provided HTML report
-                        aiStaticResultText.innerHTML = aiReportEl.innerHTML.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        
+                        let rawText = aiReportEl.textContent;
+                        let thinkingContent = "";
+                        let resultContent = "";
+
+                        // Parse markers from backend-integrated AI
+                        if (rawText.includes("[THINKING]")) {
+                            let thinkPart = rawText.split("[THINKING]")[1] || "";
+                            if (thinkPart.includes("[/THINKING]")) {
+                                thinkingContent = thinkPart.split("[/THINKING]")[0];
+                                let rest = thinkPart.split("[/THINKING]")[1] || "";
+                                if (rest.includes("[RESULT]")) {
+                                    resultContent = rest.split("[RESULT]")[1] || "";
+                                }
+                            } else {
+                                thinkingContent = thinkPart;
+                            }
+                        } else {
+                            resultContent = rawText;
+                        }
+
+                        if (aiThinkingContainer && thinkingContent) {
+                            aiThinkingContainer.style.display = 'block';
+                            aiThinkingText.innerHTML = thinkingContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                            // Start collapsed as requested
+                            toggleThinking(false);
+                        }
+
+                        if (resultContent) {
+                            aiStaticResultText.style.display = 'block';
+                            aiStaticResultText.innerHTML = resultContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                        }
                         hasBackendAI = true;
                     }
                 }
@@ -1237,16 +1269,33 @@
                         externalPanel.id = 'externalDownloadPanel';
                         externalPanel.className = 'upload-card';
                         externalPanel.style.textAlign = 'left';
-                        externalPanel.style.maxHeight = '300px';
+                        externalPanel.style.maxHeight = '500px'; // Increased to fit image
                         externalPanel.style.overflowY = 'auto';
                         externalPanel.style.marginTop = '2rem';
                         resultContainer.parentNode.insertBefore(externalPanel, resultContainer.nextSibling);
                     }
                     externalPanel.innerHTML = downloadSection.innerHTML;
+                    
+                    // 3. Extract Static View and Color Mapping Overview
+                    const overviewHeader = Array.from(doc.querySelectorAll('h4')).find(h => h.textContent.includes('AI Analyze Overview'));
+                    if (overviewHeader) {
+                        const overviewDiv = overviewHeader.parentElement;
+                        const hr = document.createElement('hr');
+                        hr.style.margin = '1.5rem 0';
+                        hr.style.border = '0';
+                        hr.style.borderTop = '1px solid #e5e7eb';
+                        externalPanel.appendChild(hr);
+                        
+                        // Extract and append the overview content
+                        const overviewContent = document.createElement('div');
+                        overviewContent.innerHTML = overviewDiv.innerHTML;
+                        externalPanel.appendChild(overviewContent);
+                    }
+                    
                     externalPanel.style.display = 'block';
                 }
 
-                // 3. Clean up the HTML to be shown in the iframe (remove redundant sidebar)
+                // 4. Clean up the HTML to be shown in the iframe (remove redundant sidebar)
                 const sidebar = doc.getElementById('sidebar');
                 if (sidebar) sidebar.remove();
                 
