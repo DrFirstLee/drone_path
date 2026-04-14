@@ -919,6 +919,7 @@
                 let currentMode = "THINKING"; // Default to thinking
 
                 if (aiThinkingContainer) aiThinkingContainer.style.display = 'block';
+                toggleThinking(true); // 스트리밍 시작 시 자동으로 펼침
 
                 while (true) {
                     const { done, value } = await reader.read();
@@ -952,7 +953,6 @@
                         let thinkPart = tempText.split("[THINKING]")[1] || "";
                         if (aiThinkingContainer) {
                             aiThinkingContainer.style.display = 'block';
-                            if (currentMode === "THINKING") toggleThinking(true); // Open while thinking
                         }
                         if (thinkPart.includes("[/THINKING]")) {
                             thinkingContent = thinkPart.split("[/THINKING]")[0];
@@ -1312,7 +1312,8 @@
             const icon = document.getElementById('thinkingToggleIcon');
             if (!content) return;
 
-            const isVisible = forceState !== undefined ? !forceState : (content.style.display === 'none');
+            // forceState가 있으면 그 상태를 따르고, 없으면 현재 상태를 반전
+            const isVisible = (forceState !== undefined) ? forceState : (content.style.display === 'none');
 
             if (isVisible) {
                 content.style.display = 'block';
